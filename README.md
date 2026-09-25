@@ -160,15 +160,12 @@ Nếu vẫn thấy trễ hoặc mất thông báo dù đã làm đủ các bư�
 khả năng cao nằm ở việc app nguồn (MBBank...) bị OEM hạn chế chạy nền —
 kiểm tra lại các mục pin/tự khởi động cho chính app đó.
 
-## Gợi ý backend nhận webhook (không nằm trong repo này)
+## Backend mẫu (Node.js)
 
-- Xác thực `X-Signature` bằng HMAC-SHA256 trên raw body, so sánh
-  constant-time.
-- Dùng `key` + `post_time` (hoặc hash tương tự phía app) làm khóa
-  idempotency — MB Relay có thể gửi lại cùng một thông báo nếu chưa
-  nhận được phản hồi 2xx kịp lúc.
-- Parse số tiền / mã đơn hàng từ `text`/`big_text`/`lines` bằng regex
-  điều chỉnh theo mẫu thật thu thập được từ từng nguồn.
+Repo này có kèm một backend mẫu để nhận webhook, verify chữ ký, dedupe
+và thử parse số tiền/mã đơn — xem [`backend/README.md`](backend/README.md).
+Đây là hàng mẫu để tự mở rộng, đã được test end-to-end trong quá trình
+viết, không phải service production sẵn dùng.
 
 ## Dữ liệu lưu local
 
@@ -202,5 +199,9 @@ mb-relay/
 │       │   └── RulesActivity.kt            # thêm/xóa/bật-tắt luật relay
 │       └── res/...
 ├── .github/workflows/build-apk.yml    # build APK tự động, không cần Android Studio
+├── backend/                            # backend mẫu nhận webhook (Node.js) — xem backend/README.md
+│   ├── src/server.js                   # verify HMAC, dedupe, parse, ghi log
+│   ├── src/parse.js                    # regex mẫu, CẦN chỉnh theo dữ liệu thật
+│   └── test/send-test-event.js         # test không cần điện thoại
 └── README.md
 ```
