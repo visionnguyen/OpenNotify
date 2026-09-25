@@ -2,6 +2,8 @@ package dev.ghien.opennotify
 
 import android.app.Notification
 import android.content.ComponentName
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -16,8 +18,36 @@ import java.util.concurrent.Executors
 class NotifyListenerService : NotificationListenerService() {
 
     private val io = Executors.newSingleThreadExecutor()
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** Nhịp tim mỗi phút: chứng minh listener còn nói chuyện được với hệ thống (dữ liệu cho biểu đồ uptime). */
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (probeConnected()) {
+                Liveness.markAlive(applicationContext, force = true)
+            } else {
+                // Hệ thống đã cắt kết nối mà không báo: ghi nhận mất + xin bind lại.
+                Liveness.onDisconnected(applicationContext)
+                requestRebind(ComponentName(this@NotifyListenerService, NotifyListenerService::class.java))
+            }
+            handler.postDelayed(this, Liveness.HEARTBEAT_MS)
+        }
+    }
+
+    /** Gọi rỗng (không kéo về thông báo nào) chỉ để kiểm tra binder tới hệ thống còn sống. */
+    private fun probeConnected(): Boolean =
+        try {
+            getActiveNotifications(arrayOf<String>()) != null
+        } catch (_: SecurityException) {
+            false
+        } catch (_: RuntimeException) {
+            false
+        }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Có thông báo tới (của bất kỳ app nào) nghĩa là Android đang giao được cho mình.
+        Liveness.markAlive(applicationContext)
+
         // Bỏ qua thông báo của chính app này (ví dụ notification keep-alive).
         if (sbn.packageName == applicationContext.packageName) return
 
@@ -40,6 +70,8 @@ class NotifyListenerService : NotificationListenerService() {
         )
 
         if (!db.insertNotification(record)) return // đã thấy thông báo này rồi
+
+        SoundPlayer.playIfEnabled(applicationContext)
 
         val searchable = PatternMatcher.searchableText(record)
         val targets = db.webhooksForPackage(sbn.packageName, onlyEnabled = true)
@@ -83,9 +115,20 @@ class NotifyListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         OutboxWorker.schedule(applicationContext)
+        Liveness.onConnected(applicationContext)
+        handler.removeCallbacks(heartbeat)
+        handler.postDelayed(heartbeat, Liveness.HEARTBEAT_MS)
     }
 
     override fun onListenerDisconnected() {
+        handler.removeCallbacks(heartbeat)
+        Liveness.onDisconnected(applicationContext)
         requestRebind(ComponentName(this, NotifyListenerService::class.java))
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(heartbeat)
+        Liveness.onDisconnected(applicationContext)
+        super.onDestroy()
     }
 }

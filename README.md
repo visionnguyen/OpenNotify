@@ -35,6 +35,20 @@ chịu các giới hạn trên tốt hơn hẳn một script poll.
 - Trang chủ hiển thị các ứng dụng đang theo dõi, mỗi ứng dụng kèm **số
   thông báo chưa đọc**. Bấm vào ứng dụng để xem chi tiết các thông báo
   (mở ra là đánh dấu đã đọc; thông báo mới in đậm).
+- Trong màn chi tiết thông báo: **vuốt một dòng sang trái** để lộ nút **Xóa**
+  ở cuối dòng; nút **thùng rác** trên thanh công cụ xóa hết thông báo của
+  ứng dụng đó (có hỏi xác nhận). Xóa là ẩn khỏi danh sách — bản gốc vẫn giữ
+  tới khi dọn định kỳ (30 ngày) để webhook chưa gửi được vẫn gửi bù và thông
+  báo bị app nguồn đăng lại không bị ghi/gửi trùng.
+- Nút **Cài đặt** (biểu tượng bánh răng, góc phải trang chủ): xem lại và
+  bật/tắt mọi thứ liên quan — quyền đọc thông báo, bỏ giới hạn pin, hiện thông
+  báo “đang chạy”, âm thanh khi có thông báo (bật/tắt + chọn âm thanh hệ
+  thống, mặc định là âm thông báo mặc định của máy). Các quyền hệ thống app
+  không tự bật/tắt được: bấm vào hàng sẽ mở đúng màn hình hệ thống, công tắc
+  phản ánh trạng thái thật.
+- Bên dưới phần cài đặt là **biểu đồ uptime 24h/ngày** (7 ngày gần nhất, mỗi
+  ngày một thanh 96 ô × 15 phút, kèm % uptime) để quan sát Android có thực sự
+  giao thông báo cho app hay đang giới hạn nó — xem mục “Biểu đồ uptime”.
 - Nút **cấu hình** (biểu tượng bánh răng) của từng ứng dụng: thêm / sửa /
   bật-tắt / xóa **nhiều webhook**. Mỗi webhook gồm tên, URL, secret, danh
   sách pattern regex và cách kết hợp:
@@ -123,8 +137,9 @@ tới đường dẫn SDK.
 
 1. Mở app **OpenNotify**. Nếu thấy banner "Chưa cấp quyền đọc thông
    báo", bấm **Cấp quyền** → bật **OpenNotify** trong danh sách.
-2. Menu **⋮ → Bỏ giới hạn pin cho app này** → xác nhận cho phép chạy nền
-   không giới hạn.
+2. Bấm biểu tượng **Cài đặt** (bánh răng) → bật **Bỏ giới hạn pin** → xác
+   nhận cho phép chạy nền không giới hạn. Cũng ở đây có thể kiểm tra lại
+   quyền đọc thông báo và chọn âm thanh báo.
 3. Bấm **+**, chọn các ứng dụng cần lấy thông báo (ví dụ MBBank) → **Thêm**.
 4. Bấm nút cấu hình của ứng dụng → **+ Thêm webhook**: điền URL, secret
    (đặt giống hệt ở backend), pattern nếu cần → **Gửi sự kiện test tới
@@ -149,6 +164,27 @@ riêng, cần bật thủ công trong Cài đặt hệ thống (không phải tr
 
 Nếu bỏ qua bước này, listener và app nguồn vẫn có thể bị hệ thống giết
 sau vài giờ dù đã cấp quyền trong app.
+
+## Biểu đồ uptime
+
+Mục đích: biết app có *thực sự* lấy được thông báo hay bị Android giới hạn, theo
+kiểu chỉ số uptime 99.9% của server. Đo dựa trên chính kết nối mà Android cấp cho
+`NotificationListenerService`:
+
+- Mỗi lần hệ thống bind listener (`onListenerConnected`) mở một **phiên**, gắn
+  với tiến trình đang chạy; phiên đóng khi bị unbind (`onListenerDisconnected` /
+  `onDestroy`) hoặc khi nhịp tim mỗi phút thấy listener không còn liên lạc được
+  với hệ thống. Mỗi nhịp tim và mỗi thông báo tới (của bất kỳ app nào) cập nhật
+  “lần cuối thấy sống”.
+- Trong một phiên = **hoạt động**, kể cả lúc máy ngủ sâu làm nhịp tim ngưng (tiến
+  trình còn, hệ thống sẽ đánh thức khi có thông báo).
+- Tiến trình bị Android giết không kịp báo → tính là **mất** từ lần cuối thấy sống
+  tới khi được bind lại. Tắt máy cũng tính là mất. Trước lúc bắt đầu theo dõi là
+  “chưa có dữ liệu”, không tính vào %.
+
+Giới hạn cần biết: đây là bằng chứng gián tiếp (Android báo đã bind), không phải
+bằng chứng từng thông báo một đều được giao. Nếu muốn chắc hơn nữa, vẫn nên dùng
+cách kiểm chứng độ trễ ở mục dưới.
 
 ## Cách kiểm chứng độ trễ khi tắt màn hình
 
@@ -180,6 +216,9 @@ viết, không phải service production sẵn dùng.
   Cột `is_read` cho số chưa đọc trên trang chủ.
 - `webhooks` + `webhook_patterns`: webhook và bộ pattern của từng ứng dụng.
 - `deliveries`: trạng thái gửi từng (thông báo, webhook), phục vụ gửi lại.
+- `listener_sessions`: các phiên kết nối của listener, nguồn của biểu đồ uptime
+  (giữ 14 ngày). Cột `notifications.is_deleted` là cờ xóa mềm.
+- Cài đặt âm thanh lưu trong SharedPreferences (`Prefs.kt`).
 
 Nâng cấp từ bản cũ (ghi mọi thông báo + luật relay toàn cục, một webhook
 chung) sẽ **reset DB** — cần thêm lại ứng dụng và webhook.
@@ -204,7 +243,10 @@ opennotify/
 │       │   ├── WebhookClient.kt            # POST tới webhook
 │       │   ├── MainActivity.kt             # trang chủ: app đang theo dõi + số chưa đọc + nút +
 │       │   ├── AppPickerActivity.kt        # chọn/tìm ứng dụng trên máy để thêm
-│       │   ├── NotificationListActivity.kt # thông báo của một ứng dụng
+│       │   ├── NotificationListActivity.kt # thông báo của một ứng dụng (vuốt để xóa, xóa hết)
+│       │   ├── SettingsActivity.kt         # cài đặt bật/tắt + biểu đồ uptime 24h/ngày
+│       │   ├── Liveness.kt / UptimeBarView.kt # đo + vẽ uptime của listener
+│       │   ├── Prefs.kt / SoundPlayer.kt   # cài đặt âm thanh + phát âm thanh khi có thông báo
 │       │   ├── AppConfigActivity.kt        # danh sách webhook của một ứng dụng
 │       │   └── WebhookEditActivity.kt      # sửa webhook: URL, secret, pattern, VÀ/HOẶC
 │       └── res/...

@@ -4,4 +4,8 @@
     <color name="badge">#E53935</color>
     <color name="muted">#888888</color>
     <color name="divider">#22888888</color>
+    <color name="uptime_up">#43A047</color>
+    <color name="uptime_partial">#FFB300</color>
+    <color name="uptime_down">#E53935</color>
+    <color name="uptime_nodata">#33888888</color>
 </resources>

@@ -2,8 +2,6 @@ package dev.ghien.opennotify
 
 import android.content.Intent
 import android.graphics.drawable.Drawable
-import android.net.Uri
-import android.os.PowerManager
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
@@ -14,7 +12,6 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -90,23 +87,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menu.add(0, MENU_BATTERY, 0, "Bỏ giới hạn pin cho app này")
+        menu.add(0, MENU_SETTINGS, 0, "Cài đặt")
+            .setIcon(R.drawable.ic_settings)
+            .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId != MENU_BATTERY) return super.onOptionsItemSelected(item)
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            startActivity(
-                Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:$packageName")
-                )
-            )
-        } else {
-            Toast.makeText(this, "Đã nằm trong danh sách miễn trừ", Toast.LENGTH_SHORT).show()
-        }
+        if (item.itemId != MENU_SETTINGS) return super.onOptionsItemSelected(item)
+        startActivity(Intent(this, SettingsActivity::class.java))
         return true
     }
 
@@ -158,6 +147,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PKG = "pkg"
-        private const val MENU_BATTERY = 1
+        private const val MENU_SETTINGS = 1
     }
 }

@@ -1,0 +1,4 @@
+<resources>
+    <!-- Bề rộng nút Xóa lộ ra khi vuốt trái một dòng thông báo. -->
+    <dimen name="swipe_delete_width">88dp</dimen>
+</resources>
