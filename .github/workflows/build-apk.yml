@@ -23,11 +23,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # Runner ubuntu-latest đã có sẵn Android SDK + license được chấp
+      # nhận sẵn tại $ANDROID_HOME, nên không cần bước setup-android riêng.
+      # AGP sẽ tự tải thêm platform/build-tools còn thiếu nếu cần.
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
