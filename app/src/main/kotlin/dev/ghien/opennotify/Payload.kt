@@ -1,12 +1,12 @@
-package dev.ghien.mbrelay
+package dev.ghien.opennotify
 
 import org.json.JSONObject
 
-/** Payload gửi tới webhook — dùng chung giữa gửi ngay (MbListenerService)
+/** Payload gửi tới webhook — dùng chung giữa gửi ngay (NotifyListenerService)
  *  và gửi lại từ hàng đợi (OutboxWorker) để tránh lệch định dạng. */
 object Payload {
     fun from(n: NotificationRecord): String = JSONObject().apply {
-        put("source", "mb-relay")
+        put("source", "opennotify")
         put("package", n.pkg)
         put("key", n.key)
         put("post_time", n.postTime)

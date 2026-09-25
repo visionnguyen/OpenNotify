@@ -10,11 +10,20 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Android 11+: cần khai báo để PackageManager trả về danh sách ứng dụng
+         có icon khởi chạy (dùng cho màn chọn ứng dụng), không cần QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_notification"
         android:label="@string/app_name"
-        android:theme="@style/Theme.MbRelay">
+        android:theme="@style/Theme.OpenNotify">
 
         <activity
             android:name=".MainActivity"
@@ -27,26 +36,34 @@
         </activity>
 
         <activity
-            android:name=".SourcesActivity"
+            android:name=".AppPickerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
-            android:label="Nguồn thông báo"
+            android:label="Chọn ứng dụng"
             android:parentActivityName=".MainActivity" />
 
         <activity
             android:name=".NotificationListActivity"
             android:exported="false"
-            android:parentActivityName=".SourcesActivity" />
-
-        <activity
-            android:name=".RulesActivity"
-            android:exported="false"
-            android:label="Luật relay"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".AppConfigActivity"
+            android:exported="false"
+            android:label="Cấu hình ứng dụng"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".WebhookEditActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="Webhook"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
-            android:name=".MbListenerService"
+            android:name=".NotifyListenerService"
             android:exported="true"
-            android:label="MB Relay Listener"
+            android:label="OpenNotify Listener"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

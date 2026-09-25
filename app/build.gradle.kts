@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.ghien.mbrelay"
+    namespace = "dev.ghien.opennotify"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "dev.ghien.mbrelay"
+        applicationId = "dev.ghien.opennotify"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
@@ -34,5 +34,6 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

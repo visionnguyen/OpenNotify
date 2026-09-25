@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <EditText
+        android:id="@+id/patternField"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:hint="Regex, ví dụ: \\+[0-9.,]+ ?VND"
+        android:importantForAutofill="no"
+        android:inputType="text" />
+
+    <ImageButton
+        android:id="@+id/patternRemove"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Xóa pattern"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:tint="?android:attr/textColorSecondary" />
+</LinearLayout>

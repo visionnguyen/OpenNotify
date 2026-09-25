@@ -1,4 +1,4 @@
-package dev.ghien.mbrelay
+package dev.ghien.opennotify
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -14,7 +14,7 @@ import androidx.core.app.NotificationCompat
  * Foreground service "rỗng": không tự làm việc gì, chỉ giữ tiến trình
  * app không bị hệ thống đóng băng (cached app freezer từ Android 14)
  * hoặc bị các ROM tối ưu pin mạnh (MIUI, ColorOS, FuntouchOS...) dọn dẹp.
- * Việc đọc thông báo thật sự vẫn do MbListenerService (được hệ thống
+ * Việc đọc thông báo thật sự vẫn do NotifyListenerService (được hệ thống
  * tự bind) đảm nhiệm — service này chỉ là một lớp đệm an toàn thêm.
  *
  * Notification hiển thị ở mức PRIORITY_MIN nên gần như không làm phiền.
@@ -31,13 +31,13 @@ class KeepAliveService : Service() {
     private fun buildNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID, "MB Relay", NotificationManager.IMPORTANCE_MIN
+                CHANNEL_ID, "OpenNotify", NotificationManager.IMPORTANCE_MIN
             ).apply { setShowBadge(false) }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MB Relay đang chạy")
-            .setContentText("Đang theo dõi thông báo biến động số dư")
+            .setContentTitle("OpenNotify đang chạy")
+            .setContentText("Đang theo dõi thông báo của các ứng dụng đã thêm")
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
@@ -45,7 +45,7 @@ class KeepAliveService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "mb_relay_keepalive"
+        private const val CHANNEL_ID = "opennotify_keepalive"
         private const val NOTIF_ID = 1001
 
         fun start(context: Context) {

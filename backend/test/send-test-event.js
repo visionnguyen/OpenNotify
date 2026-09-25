@@ -1,11 +1,11 @@
-// Giả lập app MB Relay gửi một thông báo đã ký, để test backend mà
+// Giả lập app OpenNotify gửi một thông báo đã ký, để test backend mà
 // không cần điện thoại thật. Chạy: npm run test:send
 // (đọc WEBHOOK_SECRET và TEST_URL từ biến môi trường / file .env)
 
 import "dotenv/config";
 import crypto from "node:crypto";
 
-const URL = process.env.TEST_URL || "http://localhost:3000/mb-relay";
+const URL = process.env.TEST_URL || "http://localhost:3000/opennotify";
 const SECRET = process.env.WEBHOOK_SECRET;
 
 if (!SECRET) {
@@ -14,7 +14,7 @@ if (!SECRET) {
 }
 
 const event = {
-  source: "mb-relay",
+  source: "opennotify",
   package: "com.mbmobile",
   key: `test-${Date.now()}`,
   post_time: Date.now(),

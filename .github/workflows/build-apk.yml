@@ -38,5 +38,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mb-relay-debug-apk
+          name: opennotify-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

@@ -1,4 +1,4 @@
-package dev.ghien.mbrelay
+package dev.ghien.opennotify
 
 import java.net.HttpURLConnection
 import java.net.URL
@@ -7,8 +7,10 @@ object WebhookClient {
 
     /** Hàm blocking — luôn gọi từ background thread. Trả về true nếu HTTP 2xx. */
     fun post(url: String, secret: String, body: String, timeoutMs: Int = 8000): Boolean {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        var conn: HttpURLConnection? = null
         return try {
+            // URL do người dùng nhập theo từng webhook -> URL sai chỉ trả về false, không văng lỗi.
+            conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.connectTimeout = timeoutMs
@@ -20,7 +22,7 @@ object WebhookClient {
         } catch (_: Exception) {
             false
         } finally {
-            conn.disconnect()
+            conn?.disconnect()
         }
     }
 }

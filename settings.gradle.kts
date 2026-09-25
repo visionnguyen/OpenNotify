@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "mb-relay"
+rootProject.name = "opennotify"
 include(":app")

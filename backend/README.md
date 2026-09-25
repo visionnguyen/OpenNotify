@@ -1,6 +1,6 @@
-# MB Relay backend (mẫu)
+# OpenNotify backend (mẫu)
 
-Server Node.js/Express tối giản để nhận webhook từ app **MB Relay**
+Server Node.js/Express tối giản để nhận webhook từ app **OpenNotify**
 (xem `../app`): verify chữ ký HMAC-SHA256, chống trùng lặp, thử parse số
 tiền/mã đơn bằng regex, ghi log ra file để xem lại. Đây là **hàng mẫu để
 bạn tự mở rộng**, không phải service production sẵn dùng.
@@ -15,11 +15,11 @@ chính xác hành vi từng trường hợp.
 cd backend
 npm install
 cp .env.example .env
-# mở .env, đặt WEBHOOK_SECRET trùng khớp với "Webhook Secret" trong app MB Relay
+# mở .env, đặt WEBHOOK_SECRET trùng khớp với "Webhook Secret" trong app OpenNotify
 npm start
 ```
 
-Server chạy tại `http://localhost:3000/mb-relay` (đổi `PORT`/`WEBHOOK_PATH`
+Server chạy tại `http://localhost:3000/opennotify` (đổi `PORT`/`WEBHOOK_PATH`
 trong `.env` nếu cần).
 
 ## Test không cần điện thoại
@@ -39,15 +39,15 @@ từ `.env`), dùng để kiểm tra nhanh trước khi đụng tới điện th
 điện thoại). Vài lựa chọn khi đang phát triển:
 
 - **Cloudflare Tunnel:** `cloudflared tunnel --url http://localhost:3000`
-  → dùng URL `https://xxxx.trycloudflare.com/mb-relay` làm Webhook URL
+  → dùng URL `https://xxxx.trycloudflare.com/opennotify` làm Webhook URL
   trong app.
-- **ngrok:** `ngrok http 3000` → tương tự, dùng URL ngrok + `/mb-relay`.
+- **ngrok:** `ngrok http 3000` → tương tự, dùng URL ngrok + `/opennotify`.
 - **Deploy thật** (VPS, Render, Railway...) nếu muốn chạy lâu dài thay vì
   tunnel tạm thời.
 
 ## Endpoint
 
-- `POST /mb-relay` — nhận sự kiện từ app. Yêu cầu header `X-Signature` =
+- `POST /opennotify` — nhận sự kiện từ app. Yêu cầu header `X-Signature` =
   `hex(HMAC_SHA256(WEBHOOK_SECRET, raw_body))`. Trả `401` nếu sai chữ ký,
   `200 {"status":"duplicate"}` nếu đã thấy `package+key+post_time` này
   trong 10 phút gần nhất, `200 {"status":"ok","parsed":...}` nếu ghi
@@ -73,7 +73,7 @@ const AMOUNT_RE = /([+-])\s*([\d.,]+)\s*(?:VND|VNĐ|đ)\b/i;
 const ORDER_RE = /\bDH\d+\b/i;
 ```
 
-**Cách lấy mẫu thật từ điện thoại:** mở app MB Relay → **Xem nguồn
+**Cách lấy mẫu thật từ điện thoại:** mở app OpenNotify → **Xem nguồn
 thông báo đã ghi nhận** → chọn nguồn (ví dụ `com.mbmobile`) → bấm vào
 một thông báo thật → copy nội dung `title`/`text`/`big_text`/`sub_text`/
 `lines` → chỉnh `AMOUNT_RE`/`ORDER_RE` (hoặc viết lại `parseTransaction`)

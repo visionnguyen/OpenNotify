@@ -1,20 +1,22 @@
-# MB Relay
+# OpenNotify
 
-App Android nội bộ: ghi lại **toàn bộ thông báo trên máy** (mặc định,
-không lọc theo nguồn) ngay khi chúng xuất hiện — kể cả khi màn hình tắt
-— để bạn duyệt lại trong app. Với những thông báo khớp một **luật relay**
-bạn tự định nghĩa (theo package + pattern regex tùy chọn), app đẩy nguyên
-văn nội dung lên một webhook do bạn tự host, kèm chữ ký HMAC-SHA256 để
-xác thực. Việc parse số tiền / mã đơn hàng để nguyên cho backend xử lý,
-vì sửa regex ở backend không cần build lại APK.
+App Android nội bộ: **chỉ** ghi lại thông báo của những ứng dụng bạn chủ
+động thêm vào — kể cả khi màn hình tắt — để duyệt lại trong app. Với mỗi
+ứng dụng bạn cấu hình một hoặc nhiều **webhook**, mỗi webhook có URL,
+secret và bộ **pattern regex** riêng (kết hợp bằng VÀ / HOẶC). Thông báo
+khớp webhook nào thì nguyên văn nội dung được đẩy lên webhook đó, kèm chữ
+ký HMAC-SHA256. Việc parse số tiền / mã đơn hàng để nguyên cho backend xử
+lý, vì sửa regex ở backend không cần build lại APK.
 
 **Phạm vi:** công cụ dùng nội bộ, một thiết bị, không nhằm mục đích scale
 cho nhiều cửa hàng/khách hàng. Không thay thế API chính thức của ngân
 hàng cho mục đích thương mại.
 
-**Lưu ý về quyền riêng tư:** vì bắt toàn bộ thông báo trên máy (tin nhắn,
-mạng xã hội, email...), nội dung đó nằm trong SQLite local của app dưới
-dạng **chưa mã hóa**. Chỉ phần khớp luật relay mới rời khỏi máy.
+**Lưu ý về quyền riêng tư:** Android không cho giới hạn quyền đọc thông
+báo theo từng ứng dụng, nên OpenNotify về mặt kỹ thuật *thấy* mọi thông
+báo — nhưng nó bỏ qua ngay mọi ứng dụng chưa được thêm vào danh sách.
+Thông báo của ứng dụng đã thêm nằm trong SQLite local dưới dạng **chưa mã
+hóa**; chỉ phần khớp webhook mới rời khỏi máy.
 
 ## Vì sao dùng NotificationListenerService thay vì poll bằng script
 
@@ -24,51 +26,60 @@ Termux nằm đúng diện này. `NotificationListenerService` thì khác: hệ
 thống tự bind và **đánh thức** service ngay khi có thông báo mới, nên nó
 chịu các giới hạn trên tốt hơn hẳn một script poll.
 
+## Cách dùng trong app
+
+- **Trang chủ** mặc định **trống** — chưa ghi nhận thông báo nào. Bấm dấu
+  **+** để mở danh sách toàn bộ ứng dụng trên máy (icon + tên), tìm kiếm,
+  chọn một hoặc nhiều ứng dụng rồi bấm **Thêm**. Từ lúc này OpenNotify
+  mới lấy thông báo của các ứng dụng đó.
+- Trang chủ hiển thị các ứng dụng đang theo dõi, mỗi ứng dụng kèm **số
+  thông báo chưa đọc**. Bấm vào ứng dụng để xem chi tiết các thông báo
+  (mở ra là đánh dấu đã đọc; thông báo mới in đậm).
+- Nút **cấu hình** (biểu tượng bánh răng) của từng ứng dụng: thêm / sửa /
+  bật-tắt / xóa **nhiều webhook**. Mỗi webhook gồm tên, URL, secret, danh
+  sách pattern regex và cách kết hợp:
+  - **HOẶC**: khớp một trong các pattern là gửi;
+  - **VÀ**: phải khớp tất cả pattern;
+  - không có pattern nào: nhận mọi thông báo của ứng dụng.
+- Menu **⋮ → Bỏ theo dõi ứng dụng này** (trong màn cấu hình) xóa ứng dụng
+  khỏi danh sách cùng thông báo và webhook của nó.
+
 ## Kiến trúc
 
 ```
 Bất kỳ app nào đăng thông báo trên máy
         │
         ▼
-MbListenerService.onNotificationPosted()   ← hệ thống tự gọi, kể cả khi tắt màn hình
-        │  trích xuất title/text/bigText/subText/lines (thô, chưa parse)
-        │  LUÔN lưu vào bảng "notifications" (Db.kt) — không mất dữ liệu nếu app bị kill
+NotifyListenerService.onNotificationPosted()   ← hệ thống tự gọi, kể cả khi tắt màn hình
+        │  package có trong bảng "tracked_apps"?
+        ├─ không → bỏ qua hoàn toàn
         │
+        │  có → trích xuất title/text/bigText/subText/lines (thô, chưa parse)
+        │       và lưu vào bảng "notifications" (Db.kt), is_read = 0
         ▼
-  kiểm tra bảng "relay_rules": có rule nào đang bật, đúng package,
-  và (pattern rỗng HOẶC regex khớp nội dung) không?
+  với từng webhook ĐANG BẬT của ứng dụng đó: bộ pattern có khớp không?
+  (PatternMatcher: rỗng = khớp; HOẶC = any; VÀ = all)
         │
-        ├─ không khớp  → dừng lại, chỉ nằm trong log để duyệt sau
+        ├─ không khớp → chỉ nằm trong log để duyệt
         │
-        └─ khớp        → gửi HTTP POST + HMAC-SHA256 tới webhook, retry với backoff
+        └─ khớp       → ghi dòng "deliveries" (sent=0), HTTP POST + HMAC-SHA256
+                        tới URL/secret của chính webhook đó, retry với backoff
                                │
                                ▼ (nếu thất bại)
                      OutboxWorker (WorkManager, mỗi 15 phút) gửi lại các
-                     thông báo relay_matched=1, relay_sent=0
+                     deliveries sent=0
 ```
 
 `KeepAliveService` là một foreground service gần như "rỗng" — chỉ giữ
 tiến trình app không bị hệ thống đóng băng trên các ROM tối ưu pin mạnh
 (MIUI, ColorOS, FuntouchOS...). Việc đọc thông báo thật sự vẫn do
-`MbListenerService` đảm nhiệm.
-
-## Duyệt lại thông báo trong app
-
-- **Xem nguồn thông báo đã ghi nhận** (từ MainActivity) → liệt kê mọi
-  package từng gửi thông báo, kèm số lượng và lần gần nhất.
-- Bấm vào một nguồn → xem danh sách thông báo của package đó, mỗi dòng
-  gắn nhãn `[đã relay]` / `[chờ relay]` nếu khớp luật.
-- Bấm vào một thông báo → xem đầy đủ title/text/bigText/subText/lines,
-  và có thể **tạo luật relay ngay từ đó** (package được điền sẵn).
-- **Quản lý luật relay** (từ MainActivity) → thêm/xóa/bật-tắt luật. Một
-  luật gồm package (bắt buộc) + pattern regex (tùy chọn, để trống = khớp
-  mọi thông báo từ package đó). Regex được validate trước khi lưu.
+`NotifyListenerService` đảm nhiệm.
 
 ## Payload gửi tới webhook (chỉ với thông báo khớp luật)
 
 ```json
 {
-  "source": "mb-relay",
+  "source": "opennotify",
   "package": "com.mbmobile",
   "key": "...",
   "post_time": 1730000000000,
@@ -86,7 +97,7 @@ thực bằng cách tính lại HMAC trên đúng raw body nhận được và s
 
 **Lưu ý quan trọng:** trước khi tin vào field nào, hãy tự thu thập vài
 mẫu thông báo thật của từng nguồn bạn quan tâm (giao dịch vào, giao dịch
-ra, nội dung có dấu, số lớn) qua màn hình "Xem nguồn thông báo" trong
+ra, nội dung có dấu, số lớn) qua màn hình chi tiết của từng ứng dụng trong
 app, rồi mới viết pattern regex và logic parse ở backend theo đúng mẫu
 đó — mình chưa có mẫu thật từ MBBank hay các nguồn khác nên không đảm
 bảo chính xác 100% cấu trúc nội dung.
@@ -99,7 +110,7 @@ Không cần Android Studio. Repo có sẵn GitHub Actions workflow tự build.
 2. Vào tab **Actions** → chọn workflow **Build APK** → **Run workflow**
    (hoặc chỉ cần push lên nhánh `main`, workflow tự chạy).
 3. Sau khi chạy xong, mở run đó → phần **Artifacts** → tải
-   `mb-relay-debug-apk` (file zip chứa `app-debug.apk`).
+   `opennotify-debug-apk` (file zip chứa `app-debug.apk`).
 4. Copy file `.apk` vào điện thoại (qua `adb push`, Google Drive, Termux,
    USB...) rồi cài đặt. Vì đây là APK debug tự ký (không qua Play Store),
    cần bật "Cài đặt từ nguồn không xác định" cho app dùng để mở file APK.
@@ -110,29 +121,23 @@ tới đường dẫn SDK.
 
 ## Cài đặt sau khi cài APK
 
-1. Mở app **MB Relay**.
-2. Điền **Webhook URL** (endpoint backend của bạn) và **Webhook Secret**
-   (chuỗi bí mật dùng để ký HMAC — đặt giống hệt ở backend). Bấm
-   **Lưu cấu hình**.
-3. Bấm **"1. Cấp quyền đọc thông báo"** → tìm **MB Relay** trong danh
-   sách → bật quyền. Quyền này cho phép app thấy MỌI thông báo trên máy
-   — không có cách giới hạn ở cấp hệ điều hành, việc lọc hoàn toàn nằm ở
-   bảng luật relay trong app.
-4. Bấm **"2. Bỏ giới hạn pin cho app này"** → xác nhận cho phép chạy nền
+1. Mở app **OpenNotify**. Nếu thấy banner "Chưa cấp quyền đọc thông
+   báo", bấm **Cấp quyền** → bật **OpenNotify** trong danh sách.
+2. Menu **⋮ → Bỏ giới hạn pin cho app này** → xác nhận cho phép chạy nền
    không giới hạn.
-5. Bấm **"Gửi sự kiện test tới webhook"** để xác nhận backend nhận được
-   và verify chữ ký đúng, trước khi phụ thuộc vào giao dịch thật.
-6. Dùng máy bình thường một lúc, vào **"Xem nguồn thông báo đã ghi
-   nhận"** để xem các package đang gửi thông báo, xác định đúng package
-   bạn cần (ví dụ `com.mbmobile`), rồi vào **"Quản lý luật relay"** để
-   thêm luật cho đúng nguồn + pattern mong muốn.
+3. Bấm **+**, chọn các ứng dụng cần lấy thông báo (ví dụ MBBank) → **Thêm**.
+4. Bấm nút cấu hình của ứng dụng → **+ Thêm webhook**: điền URL, secret
+   (đặt giống hệt ở backend), pattern nếu cần → **Gửi sự kiện test tới
+   webhook** để xác nhận backend nhận được và verify chữ ký đúng → **Lưu**.
+5. Dùng máy bình thường một lúc, mở ứng dụng trong OpenNotify để xem mẫu
+   thông báo thật rồi chỉnh pattern cho khớp.
 
 ### Cài đặt riêng theo hãng máy (bắt buộc trên nhiều ROM Android)
 
 Ngoài 2 bước trên, các ROM tùy biến mạnh thường có thêm lớp giới hạn
 riêng, cần bật thủ công trong Cài đặt hệ thống (không phải trong app):
 
-- **Xiaomi (MIUI/HyperOS):** Cài đặt ứng dụng → MB Relay và app nguồn
+- **Xiaomi (MIUI/HyperOS):** Cài đặt ứng dụng → OpenNotify và app nguồn
   (ví dụ MBBank) → bật **Tự khởi chạy**; bật **Không giới hạn** ở phần
   tiết kiệm pin; khóa cả hai app trong màn hình multitask.
 - **Oppo/OnePlus (ColorOS):** Cài đặt pin → Quản lý pin ứng dụng → đặt
@@ -150,7 +155,7 @@ sau vài giờ dù đã cấp quyền trong app.
 1. Tắt màn hình, để máy yên khoảng 30-60 phút (hoặc dùng `adb shell
    dumpsys deviceidle force-idle` để ép vào Doze ngay nếu bạn nối máy
    qua Wireless debugging).
-2. Kích hoạt một thông báo thật từ nguồn đã tạo luật relay (ví dụ
+2. Kích hoạt một thông báo thật từ ứng dụng đã thêm và cấu hình webhook (ví dụ
    chuyển một khoản tiền nhỏ vào tài khoản MBBank đã chia sẻ biến động).
 3. So sánh `post_time` trong payload nhận ở backend với thời điểm thực
    tế.
@@ -169,34 +174,39 @@ viết, không phải service production sẵn dùng.
 
 ## Dữ liệu lưu local
 
-- Bảng `notifications`: mọi thông báo bắt được, giữ tối đa 30 ngày
-  (tự dọn định kỳ trong `OutboxWorker`, chỉnh hằng số `olderThanMs` nếu
-  muốn giữ lâu/ngắn hơn).
-- Bảng `relay_rules`: danh sách luật package + pattern do bạn tạo qua
-  màn hình "Quản lý luật relay".
+- `tracked_apps`: ứng dụng đã thêm (package + tên hiển thị).
+- `notifications`: thông báo của các ứng dụng đó, giữ tối đa 30 ngày (tự
+  dọn định kỳ trong `OutboxWorker`, chỉnh hằng số `olderThanMs` nếu muốn).
+  Cột `is_read` cho số chưa đọc trên trang chủ.
+- `webhooks` + `webhook_patterns`: webhook và bộ pattern của từng ứng dụng.
+- `deliveries`: trạng thái gửi từng (thông báo, webhook), phục vụ gửi lại.
+
+Nâng cấp từ bản cũ (ghi mọi thông báo + luật relay toàn cục, một webhook
+chung) sẽ **reset DB** — cần thêm lại ứng dụng và webhook.
 
 ## Cấu trúc repo
 
 ```
-mb-relay/
+opennotify/
 ├── app/
 │   ├── build.gradle.kts
 │   └── src/main/
 │       ├── AndroidManifest.xml
-│       ├── kotlin/dev/ghien/mbrelay/
-│       │   ├── MbListenerService.kt        # bắt mọi thông báo, khớp luật, gửi ngay nếu khớp
-│       │   ├── Db.kt                       # SQLite: bảng notifications + relay_rules
+│       ├── kotlin/dev/ghien/opennotify/
+│       │   ├── NotifyListenerService.kt    # chỉ nhận app đã thêm, khớp webhook, gửi ngay
+│       │   ├── Db.kt                       # SQLite: tracked_apps, notifications, webhooks, patterns, deliveries
+│       │   ├── PatternMatcher.kt           # khớp bộ pattern theo VÀ / HOẶC
 │       │   ├── Payload.kt                  # dựng JSON payload dùng chung
 │       │   ├── OutboxWorker.kt             # lưới an toàn, gửi lại định kỳ + dọn log cũ
 │       │   ├── KeepAliveService.kt         # foreground service chống bị kill
 │       │   ├── BootReceiver.kt             # khởi động lại sau reboot
 │       │   ├── Signer.kt                   # HMAC-SHA256 / SHA-1
 │       │   ├── WebhookClient.kt            # POST tới webhook
-│       │   ├── Prefs.kt                    # cấu hình webhook URL/secret
-│       │   ├── MainActivity.kt             # cấu hình + test + điều hướng
-│       │   ├── SourcesActivity.kt          # liệt kê nguồn đã ghi nhận
-│       │   ├── NotificationListActivity.kt # danh sách + chi tiết thông báo theo nguồn
-│       │   └── RulesActivity.kt            # thêm/xóa/bật-tắt luật relay
+│       │   ├── MainActivity.kt             # trang chủ: app đang theo dõi + số chưa đọc + nút +
+│       │   ├── AppPickerActivity.kt        # chọn/tìm ứng dụng trên máy để thêm
+│       │   ├── NotificationListActivity.kt # thông báo của một ứng dụng
+│       │   ├── AppConfigActivity.kt        # danh sách webhook của một ứng dụng
+│       │   └── WebhookEditActivity.kt      # sửa webhook: URL, secret, pattern, VÀ/HOẶC
 │       └── res/...
 ├── .github/workflows/build-apk.yml    # build APK tự động, không cần Android Studio
 ├── backend/                            # backend mẫu nhận webhook (Node.js) — xem backend/README.md

@@ -1,4 +1,4 @@
-package dev.ghien.mbrelay
+package dev.ghien.opennotify
 
 import android.content.Context
 import androidx.work.BackoffPolicy
@@ -13,33 +13,28 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Lưới an toàn, KHÔNG phải đường gửi chính. Đường gửi chính là gửi ngay
- * trong MbListenerService lúc có thông báo khớp rule. Worker này chạy
+ * trong NotifyListenerService lúc có thông báo khớp webhook. Worker này chạy
  * định kỳ (tối thiểu 15 phút theo giới hạn WorkManager) để gửi lại các
- * thông báo đã khớp rule nhưng gửi lỗi trước đó, và dọn bớt log cũ.
+ * lượt gửi tới webhook đã khớp nhưng lỗi trước đó, và dọn bớt log cũ.
  */
 class OutboxWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
-        val ctx = applicationContext
-        val db = Db(ctx)
-        val url = Prefs.webhookUrl(ctx)
-        val secret = Prefs.webhookSecret(ctx)
+        val db = Db.get(applicationContext)
 
-        if (url.isNotBlank() && secret.isNotBlank()) {
-            for (n in db.pendingRelay(limit = 100)) {
-                if (WebhookClient.post(url, secret, Payload.from(n))) {
-                    db.markRelaySent(n.hash)
-                }
+        for (d in db.pendingDeliveries(limit = 100)) {
+            if (WebhookClient.post(d.webhook.url, d.webhook.secret, Payload.from(d.notification))) {
+                db.markDelivered(d.notification.hash, d.webhook.id)
             }
         }
-        // Giữ log thông báo (mọi nguồn) trong 30 ngày để duyệt lại;
+        // Giữ log thông báo (của các ứng dụng đang theo dõi) trong 30 ngày để duyệt lại;
         // chỉnh số này nếu muốn giữ lâu/ngắn hơn.
         db.prune(olderThanMs = 30L * 24 * 60 * 60 * 1000)
         return Result.success()
     }
 
     companion object {
-        private const val NAME = "mb-relay-outbox-flush"
+        private const val NAME = "opennotify-outbox-flush"
 
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<OutboxWorker>(15, TimeUnit.MINUTES)

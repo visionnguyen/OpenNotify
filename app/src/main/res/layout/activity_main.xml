@@ -1,98 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="MB Relay"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="12dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Webhook URL" />
-        <EditText
-            android:id="@+id/webhookUrl"
+        <LinearLayout
+            android:id="@+id/permBanner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="textUri"
-            android:hint="https://your-backend.example.com/mb-relay" />
+            android:background="#33FFB300"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Webhook Secret (HMAC)" />
-        <EditText
-            android:id="@+id/webhookSecret"
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Chưa cấp quyền đọc thông báo — OpenNotify chưa nhận được gì." />
+
+            <Button
+                android:id="@+id/permButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cấp quyền" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/appList"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="textPassword" />
-
-        <Button
-            android:id="@+id/saveButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Lưu cấu hình" />
-
-        <Button
-            android:id="@+id/notifAccessButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="1. Cấp quyền đọc thông báo" />
-
-        <Button
-            android:id="@+id/batteryButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="2. Bỏ giới hạn pin cho app này" />
-
-        <Button
-            android:id="@+id/testButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Gửi sự kiện test tới webhook" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#22000000"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="12dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="App ghi lại TẤT CẢ thông báo trên máy để xem lại. Chỉ thông báo khớp một luật relay mới được gửi ra webhook."
-            android:textColor="#666666"
-            android:layout_marginBottom="12dp" />
-
-        <Button
-            android:id="@+id/sourcesButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Xem nguồn thông báo đã ghi nhận" />
-
-        <Button
-            android:id="@+id/rulesButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Quản lý luật relay" />
-
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp" />
     </LinearLayout>
-</ScrollView>
+
+    <TextView
+        android:id="@+id/emptyView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="32dp"
+        android:text="Chưa theo dõi ứng dụng nào.\nBấm dấu + để thêm ứng dụng cần lấy thông báo."
+        android:textColor="@color/muted"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/addFab"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="20dp"
+        android:background="@drawable/bg_fab"
+        android:clickable="true"
+        android:contentDescription="Thêm ứng dụng"
+        android:elevation="6dp"
+        android:focusable="true"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:text="+"
+        android:textColor="#FFFFFF"
+        android:textSize="30sp" />
+</FrameLayout>

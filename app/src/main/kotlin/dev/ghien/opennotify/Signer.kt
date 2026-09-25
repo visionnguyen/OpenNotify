@@ -1,4 +1,4 @@
-package dev.ghien.mbrelay
+package dev.ghien.opennotify
 
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec

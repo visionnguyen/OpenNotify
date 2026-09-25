@@ -1,0 +1,7 @@
+<resources>
+    <color name="brand">#1E88E5</color>
+    <color name="brand_dark">#1565C0</color>
+    <color name="badge">#E53935</color>
+    <color name="muted">#888888</color>
+    <color name="divider">#22888888</color>
+</resources>

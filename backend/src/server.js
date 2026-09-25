@@ -12,7 +12,7 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.WEBHOOK_SECRET;
-const WEBHOOK_PATH = process.env.WEBHOOK_PATH || "/mb-relay";
+const WEBHOOK_PATH = process.env.WEBHOOK_PATH || "/opennotify";
 
 if (!SECRET) {
   console.error(
@@ -57,7 +57,7 @@ app.post(WEBHOOK_PATH, (req, res) => {
   }
 
   if (!sigOk) {
-    console.warn("[mb-relay] chữ ký không khớp, từ chối");
+    console.warn("[opennotify] chữ ký không khớp, từ chối");
     return res.status(401).json({ error: "invalid signature" });
   }
 
@@ -70,7 +70,7 @@ app.post(WEBHOOK_PATH, (req, res) => {
 
   const dedupeKey = `${event.package}|${event.key}|${event.post_time}`;
   if (seen.has(dedupeKey)) {
-    console.log(`[mb-relay] trùng, bỏ qua: ${dedupeKey}`);
+    console.log(`[opennotify] trùng, bỏ qua: ${dedupeKey}`);
     return res.status(200).json({ status: "duplicate" });
   }
   seen.set(dedupeKey, Date.now());
@@ -83,7 +83,7 @@ app.post(WEBHOOK_PATH, (req, res) => {
   const record = { received_at: new Date().toISOString(), ...event, parsed };
   fs.appendFileSync(EVENTS_FILE, JSON.stringify(record) + "\n");
 
-  console.log(`[mb-relay] ${event.package} <- ${event.text || event.title}`);
+  console.log(`[opennotify] ${event.package} <- ${event.text || event.title}`);
   console.log(parsed ? `  -> parsed: ${JSON.stringify(parsed)}` : "  -> chưa parse được, xem parse.js");
 
   res.status(200).json({ status: "ok", parsed });
@@ -103,5 +103,5 @@ app.get("/events", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`MB Relay backend mẫu đang chạy: http://localhost:${PORT}${WEBHOOK_PATH}`);
+  console.log(`OpenNotify backend mẫu đang chạy: http://localhost:${PORT}${WEBHOOK_PATH}`);
 });
