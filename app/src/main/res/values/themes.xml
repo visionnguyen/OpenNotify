@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.MbRelay" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>
