@@ -8,7 +8,6 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
@@ -24,20 +23,12 @@ class MainActivity : AppCompatActivity() {
 
         val urlField = findViewById<EditText>(R.id.webhookUrl)
         val secretField = findViewById<EditText>(R.id.webhookSecret)
-        val pkgField = findViewById<EditText>(R.id.sourcePackage)
-        val log = findViewById<TextView>(R.id.eventLog)
 
         urlField.setText(Prefs.webhookUrl(this))
         secretField.setText(Prefs.webhookSecret(this))
-        pkgField.setText(Prefs.sourcePackage(this))
 
         findViewById<Button>(R.id.saveButton).setOnClickListener {
-            Prefs.save(
-                this,
-                urlField.text.toString(),
-                secretField.text.toString(),
-                pkgField.text.toString()
-            )
+            Prefs.save(this, urlField.text.toString(), secretField.text.toString())
             KeepAliveService.start(this)
             OutboxWorker.schedule(this)
             Toast.makeText(this, "Đã lưu cấu hình", Toast.LENGTH_SHORT).show()
@@ -93,13 +84,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<Button>(R.id.refreshLogButton).setOnClickListener {
-            val recent = EventStore(this).recent(30)
-            log.text = if (recent.isEmpty()) {
-                "Chưa có sự kiện nào."
-            } else {
-                recent.joinToString("\n\n") { it.payload }
-            }
+        findViewById<Button>(R.id.sourcesButton).setOnClickListener {
+            startActivity(Intent(this, SourcesActivity::class.java))
+        }
+
+        findViewById<Button>(R.id.rulesButton).setOnClickListener {
+            startActivity(Intent(this, RulesActivity::class.java))
         }
     }
 }

@@ -39,17 +39,6 @@
             android:layout_height="wrap_content"
             android:inputType="textPassword" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Package nguồn thông báo" />
-        <EditText
-            android:id="@+id/sourcePackage"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="com.mbmobile" />
-
         <Button
             android:id="@+id/saveButton"
             android:layout_width="match_parent"
@@ -78,21 +67,32 @@
             android:layout_marginTop="16dp"
             android:text="Gửi sự kiện test tới webhook" />
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#22000000"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="App ghi lại TẤT CẢ thông báo trên máy để xem lại. Chỉ thông báo khớp một luật relay mới được gửi ra webhook."
+            android:textColor="#666666"
+            android:layout_marginBottom="12dp" />
+
         <Button
-            android:id="@+id/refreshLogButton"
+            android:id="@+id/sourcesButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Xem nguồn thông báo đã ghi nhận" />
+
+        <Button
+            android:id="@+id/rulesButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Xem log sự kiện gần đây" />
-
-        <TextView
-            android:id="@+id/eventLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:fontFamily="monospace"
-            android:textIsSelectable="true"
-            android:text="" />
+            android:text="Quản lý luật relay" />
 
     </LinearLayout>
 </ScrollView>

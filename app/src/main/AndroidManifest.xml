@@ -26,6 +26,23 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SourcesActivity"
+            android:exported="false"
+            android:label="Nguồn thông báo"
+            android:parentActivityName=".MainActivity" />
+
+        <activity
+            android:name=".NotificationListActivity"
+            android:exported="false"
+            android:parentActivityName=".SourcesActivity" />
+
+        <activity
+            android:name=".RulesActivity"
+            android:exported="false"
+            android:label="Luật relay"
+            android:parentActivityName=".MainActivity" />
+
         <service
             android:name=".MbListenerService"
             android:exported="true"

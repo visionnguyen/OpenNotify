@@ -12,27 +12,29 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 /**
- * Lưới an toàn, KHÔNG phải đường gửi chính. Đường gửi chính là gửi
- * ngay trong MbListenerService lúc có thông báo mới. Worker này chỉ
- * chạy định kỳ (WorkManager, tối thiểu 15 phút theo giới hạn Android)
- * để dọn nốt các sự kiện từng gửi lỗi trước đó — ví dụ lúc mất mạng.
+ * Lưới an toàn, KHÔNG phải đường gửi chính. Đường gửi chính là gửi ngay
+ * trong MbListenerService lúc có thông báo khớp rule. Worker này chạy
+ * định kỳ (tối thiểu 15 phút theo giới hạn WorkManager) để gửi lại các
+ * thông báo đã khớp rule nhưng gửi lỗi trước đó, và dọn bớt log cũ.
  */
-class OutboxWorker(context: Context, params: WorkerParameters) :
-    Worker(context, params) {
+class OutboxWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
     override fun doWork(): Result {
         val ctx = applicationContext
+        val db = Db(ctx)
         val url = Prefs.webhookUrl(ctx)
         val secret = Prefs.webhookSecret(ctx)
-        if (url.isBlank() || secret.isBlank()) return Result.success()
 
-        val store = EventStore(ctx)
-        for (ev in store.unsent(limit = 100)) {
-            if (WebhookClient.post(url, secret, ev.payload)) {
-                store.markSent(ev.hash)
+        if (url.isNotBlank() && secret.isNotBlank()) {
+            for (n in db.pendingRelay(limit = 100)) {
+                if (WebhookClient.post(url, secret, Payload.from(n))) {
+                    db.markRelaySent(n.hash)
+                }
             }
         }
-        store.prune(olderThanMs = 7L * 24 * 60 * 60 * 1000)
+        // Giữ log thông báo (mọi nguồn) trong 30 ngày để duyệt lại;
+        // chỉnh số này nếu muốn giữ lâu/ngắn hơn.
+        db.prune(olderThanMs = 30L * 24 * 60 * 60 * 1000)
         return Result.success()
     }
 
@@ -42,9 +44,7 @@ class OutboxWorker(context: Context, params: WorkerParameters) :
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<OutboxWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
+                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
                 .build()
