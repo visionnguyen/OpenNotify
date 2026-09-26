@@ -2,6 +2,7 @@ package dev.ghien.opennotify
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
@@ -89,6 +90,13 @@ class SettingsActivity : AppCompatActivity() {
         val container = findViewById<LinearLayout>(R.id.settingsContainer)
         listenerRow = addRow(container) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         batteryRow = addRow(container) { openBatterySettings() }
+        if (isXiaomi()) {
+            // MIUI/HyperOS không cho app đọc trạng thái "Tự khởi chạy" nên hàng này không có công tắc.
+            val autoStartRow = addRow(container) { openAutoStartSettings() }
+            autoStartRow.toggle.visibility = View.GONE
+            autoStartRow.title.text = "Tự khởi chạy (Xiaomi)"
+            autoStartRow.sub.text = "Cần bật để Android tự kết nối lại OpenNotify sau khi app bị tắt — bấm để mở"
+        }
         notifRow = addRow(container) { openNotificationSettings() }
         soundRow = addRow(container) { Prefs.setSoundEnabled(this, !Prefs.soundEnabled(this)) }
         soundPickRow = addRow(container) { pickSoundTone() }
@@ -188,6 +196,21 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun isXiaomi(): Boolean =
+        Build.MANUFACTURER.lowercase(Locale.ROOT) in setOf("xiaomi", "redmi", "poco")
+
+    private fun openAutoStartSettings() {
+        val autoStart = Intent().setComponent(
+            ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+        )
+        try {
+            startActivity(autoStart)
+        } catch (_: Exception) {
+            // Bản ROM khác đổi tên màn hình: mở trang thông tin app, mục "Tự khởi chạy" nằm trong đó.
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+    }
+
     private fun openNotificationSettings() {
         val enabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
         if (!enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !Prefs.notifPermissionAsked(this)) {
@@ -220,6 +243,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshUptime() {
         io.execute {
             val report = try {
+                Liveness.reconnectIfNeeded(applicationContext)
                 Liveness.report(applicationContext)
             } catch (_: Exception) {
                 return@execute
@@ -237,9 +261,12 @@ class SettingsActivity : AppCompatActivity() {
                 DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH
             )
             "● Đang hoạt động — Android đang giao thông báo cho OpenNotify (kết nối từ $since)"
+        } else if (!NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) {
+            "● Không kết nối — chưa cấp “Quyền đọc thông báo” ở trên."
         } else {
-            "● Không kết nối — Android chưa bind OpenNotify. Kiểm tra “Quyền đọc thông báo” ở trên; " +
-                "nếu quyền đã bật, thử tắt rồi bật lại."
+            "● Không kết nối — quyền đã cấp nhưng Android chưa bind lại OpenNotify (thường do app vừa bị " +
+                "tắt và ROM chặn tự khởi động lại). Đang tự yêu cầu kết nối lại…" +
+                if (isXiaomi()) " Để không bị lặp lại, bật “Tự khởi chạy” ở trên." else ""
         }
 
         liveUptime.text = if (r.last24h < 0) "Uptime 24 giờ gần nhất: chưa có dữ liệu"

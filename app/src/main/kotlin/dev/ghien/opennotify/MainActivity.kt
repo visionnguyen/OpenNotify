@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         permBanner.visibility =
             if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) View.GONE
             else View.VISIBLE
+        Liveness.reconnectIfNeeded(this)
         refresh()
     }
 

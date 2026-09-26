@@ -47,7 +47,15 @@ class NotifyListenerService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         // Có thông báo tới (của bất kỳ app nào) nghĩa là Android đang giao được cho mình.
         Liveness.markAlive(applicationContext)
+        handle(sbn, live = true)
+    }
 
+    /**
+     * Xử lý một thông báo: lưu nếu thuộc ứng dụng đang theo dõi, rồi gửi tới các webhook khớp.
+     * live = false khi đọc bù lúc vừa kết nối lại: không phát âm thanh cho thông báo cũ.
+     * Dedupe theo hash nên đọc bù không tạo bản trùng với thông báo đã ghi trước đó.
+     */
+    private fun handle(sbn: StatusBarNotification, live: Boolean) {
         // Bỏ qua thông báo của chính app này (ví dụ notification keep-alive).
         if (sbn.packageName == applicationContext.packageName) return
 
@@ -71,7 +79,7 @@ class NotifyListenerService : NotificationListenerService() {
 
         if (!db.insertNotification(record)) return // đã thấy thông báo này rồi
 
-        SoundPlayer.playIfEnabled(applicationContext)
+        if (live) SoundPlayer.playIfEnabled(applicationContext)
 
         val searchable = PatternMatcher.searchableText(record)
         val targets = db.webhooksForPackage(sbn.packageName, onlyEnabled = true)
@@ -118,6 +126,27 @@ class NotifyListenerService : NotificationListenerService() {
         Liveness.onConnected(applicationContext)
         handler.removeCallbacks(heartbeat)
         handler.postDelayed(heartbeat, Liveness.HEARTBEAT_MS)
+        io.execute { backfill() }
+    }
+
+    /**
+     * Lúc bị ngắt kết nối (app bị tắt, ROM chặn tự khởi chạy...) Android không giao thông báo cho
+     * mình và cũng không giao bù. Những thông báo vẫn còn trên thanh thông báo thì đọc lại được ở đây;
+     * cái người dùng đã vuốt bỏ hoặc app nguồn tự hủy trong lúc đó thì mất hẳn.
+     */
+    private fun backfill() {
+        val active = try {
+            activeNotifications
+        } catch (_: RuntimeException) {
+            null
+        } ?: return
+        for (sbn in active) {
+            try {
+                handle(sbn, live = false)
+            } catch (_: RuntimeException) {
+                // Một thông báo lỗi không được chặn các thông báo còn lại.
+            }
+        }
     }
 
     override fun onListenerDisconnected() {

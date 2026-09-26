@@ -489,6 +489,11 @@ class Db private constructor(context: Context) :
         ) > 0
     }
 
+    fun hasOpenSession(procKey: String): Boolean =
+        readableDatabase.rawQuery(
+            "select 1 from listener_sessions where proc_key = ? and end_ts is null limit 1", arrayOf(procKey)
+        ).use { it.moveToFirst() }
+
     fun sessionEnded(procKey: String, now: Long) {
         val cv = ContentValues().apply {
             put("end_ts", now)

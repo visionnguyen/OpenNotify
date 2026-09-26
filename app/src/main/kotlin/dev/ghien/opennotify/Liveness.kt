@@ -1,7 +1,11 @@
 package dev.ghien.opennotify
 
+import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Process
+import android.os.SystemClock
+import androidx.core.app.NotificationManagerCompat
 import java.util.Calendar
 
 /** Khoảng [start, end) mà listener được coi là "sống" (Android đã bind và nhận được thông báo). */
@@ -69,6 +73,40 @@ object Liveness {
         val db = Db.get(context)
         if (!db.sessionHeartbeat(procKey, now)) db.sessionStarted(procKey, now)
         lastBeat = now
+    }
+
+    private const val RECONNECT_GAP_MS = 30_000L
+
+    @Volatile
+    private var lastReconnect = 0L
+
+    /**
+     * Quyền đọc thông báo đã cấp mà listener chưa được bind vào tiến trình này -> ép hệ thống bind
+     * lại. Sau khi app bị tắt, Android thử bind lại nhưng ROM như MIUI chặn nếu chưa bật "Tự khởi
+     * chạy"; lúc app đang mở ở foreground thì được phép, nên gọi hàm này từ onResume của màn hình.
+     *
+     * requestRebind() chỉ có tác dụng sau requestUnbind(), nên cách chắc ăn là tắt rồi bật lại
+     * component: hệ thống coi như gói vừa thay đổi và bind lại listener. Tự giãn cách 30s.
+     */
+    fun reconnectIfNeeded(context: Context) {
+        val ctx = context.applicationContext
+        if (!NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)) return
+        if (Db.get(ctx).hasOpenSession(procKey)) return
+        val now = SystemClock.elapsedRealtime()
+        if (lastReconnect != 0L && now - lastReconnect < RECONNECT_GAP_MS) return
+        lastReconnect = now
+
+        val component = ComponentName(ctx, NotifyListenerService::class.java)
+        val pm = ctx.packageManager
+        try {
+            pm.setComponentEnabledSetting(
+                component, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP
+            )
+        } finally {
+            pm.setComponentEnabledSetting(
+                component, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT, PackageManager.DONT_KILL_APP
+            )
+        }
     }
 
     // ---- tính toán thuần (không đụng Android/DB) ----
