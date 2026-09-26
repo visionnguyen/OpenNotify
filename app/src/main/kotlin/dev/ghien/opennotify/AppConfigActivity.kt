@@ -115,8 +115,10 @@ class AppConfigActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val w = items[position]
             holder.name.text = w.name
-            holder.url.text = w.url
+            holder.url.text = if (w.kind == WebhookKind.MAPCHAT) "mapchat · ${w.url}" else w.url
             holder.patterns.text = when {
+                w.unpaired -> "⚠ Máy quầy đã đổi mã ghép — đã ngừng gửi. Bấm vào để quét lại mã QR."
+                w.kind == WebhookKind.MAPCHAT -> "Gửi thông báo có mã đơn mapchat · mã hóa AES-256-GCM"
                 w.patterns.isEmpty() -> "Nhận mọi thông báo của ứng dụng"
                 w.mode == MatchMode.AND -> "${w.patterns.size} pattern · khớp TẤT CẢ (và)"
                 else -> "${w.patterns.size} pattern · khớp MỘT TRONG (hoặc)"

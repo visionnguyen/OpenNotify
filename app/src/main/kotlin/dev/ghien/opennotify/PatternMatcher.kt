@@ -20,6 +20,19 @@ object PatternMatcher {
     fun searchableText(n: NotificationRecord): String =
         "${n.title} ${n.text} ${n.bigText} ${n.subText} ${n.lines}"
 
+    private val NON_ALNUM = Regex("[^\\p{L}\\p{N}]")
+
+    /**
+     * Chuỗi đem đối chiếu với pattern của webhook. Cặp mapchat: viết hoa và bỏ mọi ký tự không phải
+     * chữ/số, vì ngân hàng hay cắt dòng và chèn dấu cách giữa mã đơn (docs/mapchat-pairing.md).
+     * Chỉ xét đúng phần sẽ gửi đi (MapchatEnvelope.textOf): mã đơn nằm ngoài phần đó thì máy quầy
+     * cũng không thấy.
+     */
+    fun inputFor(w: Webhook, n: NotificationRecord): String = when (w.kind) {
+        WebhookKind.HMAC -> searchableText(n)
+        WebhookKind.MAPCHAT -> MapchatEnvelope.textOf(n).uppercase().replace(NON_ALNUM, "")
+    }
+
     fun isValidRegex(pattern: String): Boolean = try {
         Regex(pattern)
         true

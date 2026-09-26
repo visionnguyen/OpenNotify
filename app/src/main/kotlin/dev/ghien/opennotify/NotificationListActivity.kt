@@ -134,7 +134,14 @@ class NotificationListActivity : AppCompatActivity() {
                 append("Webhook: không khớp webhook nào")
             } else {
                 append("Webhook:")
-                statuses.forEach { append("\n• ${it.webhookName}: ${if (it.sent) "đã gửi" else "chờ gửi"}") }
+                statuses.forEach {
+                    val state = when (it.state) {
+                        DeliveryState.SENT -> "đã gửi"
+                        DeliveryState.DROPPED -> "đã bỏ, không gửi lại"
+                        else -> "chờ gửi"
+                    }
+                    append("\n• ${it.webhookName}: $state")
+                }
             }
         }
         AlertDialog.Builder(this)

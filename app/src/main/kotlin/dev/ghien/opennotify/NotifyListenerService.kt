@@ -81,9 +81,10 @@ class NotifyListenerService : NotificationListenerService() {
 
         if (live) SoundPlayer.playIfEnabled(applicationContext)
 
-        val searchable = PatternMatcher.searchableText(record)
         val targets = db.webhooksForPackage(sbn.packageName, onlyEnabled = true)
-            .filter { PatternMatcher.matches(it, searchable) }
+            .filter { PatternMatcher.matches(it, PatternMatcher.inputFor(it, record)) }
+            // Đọc bù thông báo đã nằm trên máy quá lâu: máy quầy mapchat không cần nữa.
+            .filter { live || it.kind != WebhookKind.MAPCHAT || record.ts - record.postTime < Sender.MAPCHAT_MAX_AGE_MS }
         if (targets.isEmpty()) return
 
         // Ghi nhận trước khi gửi: nếu app bị kill giữa chừng, OutboxWorker vẫn gửi bù.
@@ -95,24 +96,20 @@ class NotifyListenerService : NotificationListenerService() {
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         val wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK, "opennotify:deliver"
-        ).apply { acquire(60_000L) }
+        ).apply { acquire(120_000L) }
 
         io.execute {
             try {
                 val db = Db.get(applicationContext)
-                val body = Payload.from(record)
                 for (w in targets) {
-                    var ok = false
-                    var attempt = 0
-                    while (!ok && attempt < 4) {
-                        ok = WebhookClient.post(w.url, w.secret, body)
-                        if (!ok) {
-                            attempt++
-                            Thread.sleep(1000L * attempt)
-                        }
+                    var outcome = SendOutcome.RETRY
+                    for (delay in Sender.immediateDelaysMs(w)) {
+                        if (delay > 0) Thread.sleep(delay)
+                        outcome = Sender.send(w, record)
+                        if (outcome != SendOutcome.RETRY) break
                     }
-                    if (ok) db.markDelivered(record.hash, w.id)
-                    // Thất bại: dòng deliveries sent=0 vẫn còn, OutboxWorker sẽ thử lại theo chu kỳ.
+                    // RETRY: dòng deliveries sent=0 vẫn còn, OutboxWorker sẽ thử lại theo chu kỳ.
+                    Sender.record(db, record.hash, w, outcome)
                 }
             } finally {
                 if (wakeLock.isHeld) wakeLock.release()

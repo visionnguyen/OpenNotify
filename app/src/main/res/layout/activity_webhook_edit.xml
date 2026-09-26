@@ -9,9 +9,26 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <Button
+            android:id="@+id/scanPairingButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Quét mã QR ghép đôi (máy quầy mapchat)" />
+
+        <TextView
+            android:id="@+id/pairingInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:textColor="@color/muted"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:text="Tên webhook" />
         <EditText
             android:id="@+id/whNameField"
@@ -34,17 +51,24 @@
             android:importantForAutofill="no"
             android:inputType="textUri" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Webhook Secret (HMAC)" />
-        <EditText
-            android:id="@+id/whSecretField"
+        <LinearLayout
+            android:id="@+id/secretGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:importantForAutofill="no"
-            android:inputType="textPassword" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Webhook Secret (HMAC)" />
+            <EditText
+                android:id="@+id/whSecretField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:importantForAutofill="no"
+                android:inputType="textPassword" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
@@ -60,6 +84,7 @@
             android:textSize="16sp"
             android:textStyle="bold" />
         <TextView
+            android:id="@+id/patternHelp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"

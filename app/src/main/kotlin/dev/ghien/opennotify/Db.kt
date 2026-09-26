@@ -36,15 +36,36 @@ data class Webhook(
     val pkg: String,
     val name: String,
     val url: String,
+    /** HMAC: secret để ký. MAPCHAT: khóa AES-256-GCM (base64url) — không bao giờ hiện/log. */
     val secret: String,
     val mode: MatchMode,
     val enabled: Boolean,
-    val patterns: List<String>
+    val patterns: List<String>,
+    val kind: WebhookKind = WebhookKind.HMAC,
+    /** Mã ghép mapchat (`id` trong mã QR); null với webhook HMAC. */
+    val pairingId: String? = null,
+    /** mapchat trả 404: máy quầy đã "Đổi mã", cặp này ngừng gửi cho tới khi quét lại QR. */
+    val unpaired: Boolean = false
 )
+
+/**
+ * HMAC: POST JSON rõ + header X-Signature tới backend riêng.
+ * MAPCHAT: cặp ghép với máy quầy mapchat qua mã QR, gói tin mã hóa AES-256-GCM
+ * (xem docs/mapchat-pairing.md).
+ */
+enum class WebhookKind { HMAC, MAPCHAT }
 
 data class PendingDelivery(val notification: NotificationRecord, val webhook: Webhook)
 
-data class DeliveryStatus(val webhookName: String, val sent: Boolean)
+/** Trạng thái một lượt gửi (cột deliveries.sent). */
+object DeliveryState {
+    const val PENDING = 0
+    const val SENT = 1
+    /** Bỏ hẳn, không thử lại: gói tin bị từ chối, cặp ghép đã đổi, hoặc quá hạn. */
+    const val DROPPED = 2
+}
+
+data class DeliveryStatus(val webhookName: String, val state: Int)
 
 /**
  * Một lượt listener được Android bind vào tiến trình `procKey`. endTs = null
@@ -60,7 +81,7 @@ data class ListenerSession(val procKey: String, val startTs: Long, val lastSeenT
  * gửi thành công) — xem NotifyListenerService và OutboxWorker.
  */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "opennotify.db", null, 4) {
+    SQLiteOpenHelper(context.applicationContext, "opennotify.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -98,7 +119,10 @@ class Db private constructor(context: Context) :
                 secret text not null,
                 match_mode text not null default 'OR',
                 enabled integer not null default 1,
-                created_ts integer not null
+                created_ts integer not null,
+                kind text not null default 'HMAC',
+                pairing_id text,
+                unpaired integer not null default 0
             )"""
         )
         db.execSQL("create index idx_webhook_package on webhooks(package)")
@@ -153,6 +177,12 @@ class Db private constructor(context: Context) :
             // Giữ nguyên dữ liệu đang có; chỉ thêm cột xóa mềm + bảng đo uptime.
             db.execSQL("alter table notifications add column is_deleted integer not null default 0")
             createSessionsTable(db)
+        }
+        if (oldVersion < 5) {
+            // Thêm loại webhook mapchat (ghép qua mã QR); webhook cũ đều là HMAC.
+            db.execSQL("alter table webhooks add column kind text not null default 'HMAC'")
+            db.execSQL("alter table webhooks add column pairing_id text")
+            db.execSQL("alter table webhooks add column unpaired integer not null default 0")
         }
     }
 
@@ -307,18 +337,26 @@ class Db private constructor(context: Context) :
 
     // ---- webhooks ----
 
+    /** onlyEnabled: chỉ những webhook đang gửi được (bật và không phải cặp mapchat đã bị đổi mã). */
     fun webhooksForPackage(pkg: String, onlyEnabled: Boolean = false): List<Webhook> =
         queryWebhooks(
-            "where package = ?" + if (onlyEnabled) " and enabled = 1" else "", arrayOf(pkg)
+            "where package = ?" + if (onlyEnabled) " and enabled = 1 and unpaired = 0" else "", arrayOf(pkg)
         )
 
     fun webhook(id: Long): Webhook? = queryWebhooks("where id = ?", arrayOf(id.toString())).firstOrNull()
+
+    /** Cặp mapchat đã ghép với cùng mã ghép trong cùng app (quét lại = cập nhật cặp này). */
+    fun findPairing(pkg: String, pairingId: String): Webhook? =
+        queryWebhooks(
+            "where package = ? and kind = ? and pairing_id = ?", arrayOf(pkg, WebhookKind.MAPCHAT.name, pairingId)
+        ).firstOrNull()
 
     private fun queryWebhooks(where: String, args: Array<String>): List<Webhook> {
         val db = readableDatabase
         val rows = mutableListOf<Webhook>()
         db.rawQuery(
-            "select id, package, name, url, secret, match_mode, enabled from webhooks $where order by id",
+            """select id, package, name, url, secret, match_mode, enabled, kind, pairing_id, unpaired
+               from webhooks $where order by id""",
             args
         ).use { c ->
             while (c.moveToNext()) {
@@ -327,7 +365,10 @@ class Db private constructor(context: Context) :
                         id = c.getLong(0), pkg = c.getString(1), name = c.getString(2),
                         url = c.getString(3), secret = c.getString(4),
                         mode = if (c.getString(5) == MatchMode.AND.name) MatchMode.AND else MatchMode.OR,
-                        enabled = c.getInt(6) == 1, patterns = emptyList()
+                        enabled = c.getInt(6) == 1, patterns = emptyList(),
+                        kind = if (c.getString(7) == WebhookKind.MAPCHAT.name) WebhookKind.MAPCHAT else WebhookKind.HMAC,
+                        pairingId = if (c.isNull(8)) null else c.getString(8),
+                        unpaired = c.getInt(9) == 1
                     )
                 )
             }
@@ -356,6 +397,9 @@ class Db private constructor(context: Context) :
                 put("secret", w.secret)
                 put("match_mode", w.mode.name)
                 put("enabled", if (w.enabled) 1 else 0)
+                put("kind", w.kind.name)
+                put("pairing_id", w.pairingId)
+                put("unpaired", if (w.unpaired) 1 else 0)
             }
             val id = if (w.id == 0L) {
                 cv.put("created_ts", System.currentTimeMillis())
@@ -409,11 +453,32 @@ class Db private constructor(context: Context) :
         writableDatabase.insertWithOnConflict("deliveries", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }
 
-    fun markDelivered(hash: String, webhookId: Long) {
-        val cv = ContentValues().apply { put("sent", 1) }
+    fun markDelivered(hash: String, webhookId: Long) = setDeliveryState(hash, webhookId, DeliveryState.SENT)
+
+    fun markDropped(hash: String, webhookId: Long) = setDeliveryState(hash, webhookId, DeliveryState.DROPPED)
+
+    private fun setDeliveryState(hash: String, webhookId: Long, state: Int) {
+        val cv = ContentValues().apply { put("sent", state) }
         writableDatabase.update(
             "deliveries", cv, "hash = ? and webhook_id = ?", arrayOf(hash, webhookId.toString())
         )
+    }
+
+    /** mapchat trả 404: cặp ghép không còn hiệu lực -> ngừng gửi, bỏ mọi lượt đang chờ của nó. */
+    fun markUnpaired(webhookId: Long) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val arg = arrayOf(webhookId.toString())
+            db.update("webhooks", ContentValues().apply { put("unpaired", 1) }, "id = ?", arg)
+            db.update(
+                "deliveries", ContentValues().apply { put("sent", DeliveryState.DROPPED) },
+                "webhook_id = ? and sent = ${DeliveryState.PENDING}", arg
+            )
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     /** Các lượt gửi chưa thành công tới webhook còn tồn tại và đang bật. */
@@ -422,9 +487,9 @@ class Db private constructor(context: Context) :
         readableDatabase.rawQuery(
             """select d.hash, d.webhook_id
                from deliveries d
-               join webhooks w on w.id = d.webhook_id and w.enabled = 1
+               join webhooks w on w.id = d.webhook_id and w.enabled = 1 and w.unpaired = 0
                join notifications n on n.hash = d.hash
-               where d.sent = 0
+               where d.sent = ${DeliveryState.PENDING}
                order by n.ts asc limit ?""",
             arrayOf(limit.toString())
         ).use { c -> while (c.moveToNext()) pairs.add(c.getString(0) to c.getLong(1)) }
@@ -450,7 +515,7 @@ class Db private constructor(context: Context) :
                join webhooks w on w.id = d.webhook_id
                where d.hash = ? order by w.id""",
             arrayOf(hash)
-        ).use { c -> while (c.moveToNext()) out.add(DeliveryStatus(c.getString(0), c.getInt(1) == 1)) }
+        ).use { c -> while (c.moveToNext()) out.add(DeliveryStatus(c.getString(0), c.getInt(1))) }
         return out
     }
 

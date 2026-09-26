@@ -201,6 +201,14 @@ Nếu vẫn thấy trễ hoặc mất thông báo dù đã làm đủ các bư�
 khả năng cao nằm ở việc app nguồn (MBBank...) bị OEM hạn chế chạy nền —
 kiểm tra lại các mục pin/tự khởi động cho chính app đó.
 
+## Ghép với máy quầy mapchat (quét QR)
+
+Trong màn thêm/sửa webhook có nút **Quét mã QR ghép đôi**: quét mã ở máy quầy mapchat
+(**Cài đặt → Xác nhận thanh toán tự động → Hiện mã QR**) là webhook được cấu hình xong — địa chỉ,
+mã ghép, khóa và mẫu lọc đều lấy từ mã QR. Thông báo khớp mã đơn được mã hóa AES-256-GCM trước khi
+gửi; mapchat chỉ chuyển tiếp, không đọc được. Chỉ đặt cặp này cho app ngân hàng nhận tiền của tiệm.
+Quy chuẩn đầy đủ: [`docs/mapchat-pairing.md`](docs/mapchat-pairing.md).
+
 ## Backend mẫu (Node.js)
 
 Repo này có kèm một backend mẫu để nhận webhook, verify chữ ký, dedupe
