@@ -294,7 +294,9 @@ class Db private constructor(context: Context) :
             )
             db.execSQL("delete from deliveries where hash not in (select hash from notifications)")
             db.delete(
-                "listener_sessions", "coalesce(end_ts, last_seen_ts) < ?",
+                // cast bắt buộc: coalesce(...) không có affinity nên tham số chuỗi không được đổi
+                // sang số, mà INTEGER < TEXT luôn đúng trong SQLite -> từng xóa sạch mọi phiên.
+                "listener_sessions", "coalesce(end_ts, last_seen_ts) < cast(? as integer)",
                 arrayOf((System.currentTimeMillis() - SESSION_RETENTION_MS).toString())
             )
             db.setTransactionSuccessful()
@@ -500,7 +502,7 @@ class Db private constructor(context: Context) :
         val out = mutableListOf<ListenerSession>()
         readableDatabase.rawQuery(
             """select proc_key, start_ts, last_seen_ts, end_ts from listener_sessions
-               where coalesce(end_ts, last_seen_ts) >= ? order by start_ts""",
+               where coalesce(end_ts, last_seen_ts) >= cast(? as integer) order by start_ts""",
             arrayOf(since.toString())
         ).use { c ->
             while (c.moveToNext()) {
