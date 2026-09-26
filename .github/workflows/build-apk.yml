@@ -32,7 +32,22 @@ jobs:
         with:
           gradle-version: 8.7
 
+      # Khóa ký cố định (repo secret) để mọi bản build cài đè được lên nhau. Thiếu secret
+      # (ví dụ repo fork) thì bước build rơi về khóa debug ngẫu nhiên của runner.
+      - name: Restore signing keystore
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$SIGNING_KEYSTORE_B64" ]; then
+            echo "$SIGNING_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/opennotify.p12"
+            echo "SIGNING_KEYSTORE_PATH=$RUNNER_TEMP/opennotify.p12" >> "$GITHUB_ENV"
+          else
+            echo "::warning::SIGNING_KEYSTORE_B64 chưa được đặt — APK sẽ ký bằng khóa debug ngẫu nhiên, không cài đè được bản cũ."
+          fi
+
       - name: Build debug APK
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK artifact

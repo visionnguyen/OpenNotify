@@ -15,7 +15,26 @@ android {
         versionName = "1.0"
     }
 
+    // CI ký mọi bản build bằng cùng một khóa (giải từ GitHub Secret ra file, xem build-apk.yml),
+    // để APK mới cài đè được lên bản cũ mà không phải gỡ app và mất dữ liệu. Build local không có
+    // biến môi trường này thì dùng khóa debug mặc định của máy.
+    val ciKeystore = System.getenv("SIGNING_KEYSTORE_PATH")?.let(::file)?.takeIf { it.exists() }
+    signingConfigs {
+        if (ciKeystore != null) {
+            create("ci") {
+                storeFile = ciKeystore
+                storeType = "pkcs12"
+                storePassword = System.getenv("SIGNING_PASSWORD")
+                keyAlias = "opennotify"
+                keyPassword = System.getenv("SIGNING_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (ciKeystore != null) signingConfig = signingConfigs.getByName("ci")
+        }
         release {
             isMinifyEnabled = false
         }
