@@ -10,18 +10,27 @@
         android:padding="16dp">
 
         <Button
-            android:id="@+id/scanPairingButton"
+            android:id="@+id/scanQrButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Quét mã QR ghép đôi (máy quầy mapchat)" />
+            android:text="Quét mã QR cấu hình" />
 
         <TextView
-            android:id="@+id/pairingInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:layout_marginBottom="8dp"
+            android:text="Tiện ích nhập nhanh: mã QR chỉ điền sẵn các ô bên dưới, mọi ô vẫn nhập/sửa tay được (chuẩn OpenNotify Webhook v1)."
             android:textColor="@color/muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/stoppedWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="⚠ Bên nhận đã báo không còn nhận ở địa chỉ/id này (404/410) nên webhook đã ngừng gửi. Sửa cấu hình hoặc quét lại mã QR rồi Lưu để gửi lại."
+            android:textColor="@color/uptime_down"
             android:textSize="13sp"
             android:visibility="gone" />
 
@@ -51,24 +60,56 @@
             android:importantForAutofill="no"
             android:inputType="textUri" />
 
-        <LinearLayout
-            android:id="@+id/secretGroup"
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Bảo mật" />
+        <RadioGroup
+            android:id="@+id/securityGroup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <TextView
+            <RadioButton
+                android:id="@+id/securityHmac"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Webhook Secret (HMAC)" />
-            <EditText
-                android:id="@+id/whSecretField"
-                android:layout_width="match_parent"
+                android:text="HMAC — gửi JSON rõ, ký bằng secret" />
+
+            <RadioButton
+                android:id="@+id/securityAes"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:importantForAutofill="no"
-                android:inputType="textPassword" />
-        </LinearLayout>
+                android:text="Mã hóa AES-GCM — chỉ bên có khóa đọc được" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/secretLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Secret" />
+        <EditText
+            android:id="@+id/whSecretField"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:importantForAutofill="no"
+            android:inputType="textPassword" />
+
+        <TextView
+            android:id="@+id/endpointIdLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="ID endpoint" />
+        <EditText
+            android:id="@+id/whEndpointIdField"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="A–Z a–z 0–9 - _, tối đa 64 ký tự"
+            android:importantForAutofill="no"
+            android:inputType="text" />
 
         <View
             android:layout_width="match_parent"
@@ -88,7 +129,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Regex, không phân biệt hoa/thường, đối chiếu với title + text + big text + sub text + lines. Không có pattern nào = nhận mọi thông báo của ứng dụng."
+            android:text="Regex, không phân biệt hoa/thường, đối chiếu với nội dung thông báo (title + text + big text + sub text + lines). Không có pattern nào = nhận mọi thông báo của ứng dụng."
             android:textColor="@color/muted"
             android:textSize="13sp" />
 
@@ -123,6 +164,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="+ Thêm pattern" />
+
+        <CheckBox
+            android:id="@+id/normalizeField"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Chuẩn hóa trước khi so: viết hoa, bỏ dấu cách và ký tự không phải chữ/số" />
 
         <CheckBox
             android:id="@+id/whEnabledField"

@@ -68,22 +68,25 @@ app.post(WEBHOOK_PATH, (req, res) => {
     return res.status(400).json({ error: "invalid json" });
   }
 
-  const dedupeKey = `${event.package}|${event.key}|${event.post_time}`;
+  // Payload chuẩn OpenNotify Webhook v1 (docs/webhook-standard.md ở gốc repo).
+  if (event.v !== 1) {
+    return res.status(400).json({ error: "unsupported payload version" });
+  }
+
+  const dedupeKey = `${event.pkg}|${event.key}|${event.post_time}`;
   if (seen.has(dedupeKey)) {
     console.log(`[opennotify] trùng, bỏ qua: ${dedupeKey}`);
     return res.status(200).json({ status: "duplicate" });
   }
   seen.set(dedupeKey, Date.now());
 
-  const combined = [event.title, event.text, event.big_text, event.sub_text, event.lines]
-    .filter(Boolean)
-    .join(" ");
-  const parsed = parseTransaction(combined);
+  // `text` đã là toàn bộ nội dung thông báo gộp lại; các trường title/body/... là bản thô.
+  const parsed = parseTransaction(event.text || "");
 
   const record = { received_at: new Date().toISOString(), ...event, parsed };
   fs.appendFileSync(EVENTS_FILE, JSON.stringify(record) + "\n");
 
-  console.log(`[opennotify] ${event.package} <- ${event.text || event.title}`);
+  console.log(`[opennotify] ${event.pkg} <- ${event.text}`);
   console.log(parsed ? `  -> parsed: ${JSON.stringify(parsed)}` : "  -> chưa parse được, xem parse.js");
 
   res.status(200).json({ status: "ok", parsed });

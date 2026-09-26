@@ -1,7 +1,6 @@
 package dev.ghien.opennotify
 
 import android.app.AlertDialog
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -16,14 +15,15 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.zxing.client.android.Intents
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
-import org.json.JSONObject
 import java.util.concurrent.Executors
 
 /**
- * Thêm/sửa một webhook của một ứng dụng. Hai loại:
- *  - HMAC: tự nhập URL, secret, danh sách pattern (regex) và cách kết hợp (VÀ / HOẶC).
- *  - mapchat: quét mã QR ở máy quầy là xong; URL, mã ghép, khóa và pattern đều lấy từ mã QR
- *    và bị khóa không cho sửa tay (docs/mapchat-pairing.md). Khóa không bao giờ hiện ra màn hình.
+ * Thêm/sửa một webhook theo chuẩn OpenNotify Webhook v1 (docs/webhook-standard.md). Một form duy
+ * nhất cho mọi chế độ bảo mật; nút quét QR chỉ điền sẵn các ô của form — nhập tay và quét QR cho
+ * ra đúng cùng một cấu hình (WebhookConfig) và qua cùng một bước kiểm tra.
+ *
+ * Secret/khóa không bao giờ được điền ra ô dạng rõ: ô để trống nghĩa là giữ giá trị đang lưu
+ * (hoặc vừa quét), gõ vào thì thay.
  */
 class WebhookEditActivity : AppCompatActivity() {
 
@@ -31,23 +31,25 @@ class WebhookEditActivity : AppCompatActivity() {
 
     private lateinit var pkg: String
     private var webhookId = 0L
+    private var stopped = false
 
-    /** Cặp mapchat đang sửa: từ lần quét vừa rồi, hoặc từ webhook mapchat đã lưu. null = webhook HMAC. */
-    private var pairing: MapchatPairing? = null
-    private var unpaired = false
+    /** Secret/khóa đang giữ (đã lưu hoặc vừa quét), dùng khi ô secret để trống. */
+    private var keptSecret = ""
 
     private lateinit var nameField: EditText
     private lateinit var urlField: EditText
+    private lateinit var securityHmac: RadioButton
+    private lateinit var securityAes: RadioButton
+    private lateinit var secretLabel: TextView
     private lateinit var secretField: EditText
-    private lateinit var secretGroup: View
-    private lateinit var modeGroup: View
+    private lateinit var endpointIdLabel: TextView
+    private lateinit var endpointIdField: EditText
     private lateinit var modeAnd: RadioButton
     private lateinit var modeOr: RadioButton
+    private lateinit var normalizeField: CheckBox
     private lateinit var enabledField: CheckBox
     private lateinit var patternContainer: LinearLayout
-    private lateinit var addPatternButton: Button
-    private lateinit var patternHelp: TextView
-    private lateinit var pairingInfo: TextView
+    private lateinit var stoppedWarning: View
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let(::onScanned) // null = người dùng bấm quay lại
@@ -62,21 +64,25 @@ class WebhookEditActivity : AppCompatActivity() {
 
         nameField = findViewById(R.id.whNameField)
         urlField = findViewById(R.id.whUrlField)
+        securityHmac = findViewById(R.id.securityHmac)
+        securityAes = findViewById(R.id.securityAes)
+        secretLabel = findViewById(R.id.secretLabel)
         secretField = findViewById(R.id.whSecretField)
-        secretGroup = findViewById(R.id.secretGroup)
-        modeGroup = findViewById(R.id.modeGroup)
+        endpointIdLabel = findViewById(R.id.endpointIdLabel)
+        endpointIdField = findViewById(R.id.whEndpointIdField)
         modeAnd = findViewById(R.id.modeAnd)
         modeOr = findViewById(R.id.modeOr)
+        normalizeField = findViewById(R.id.normalizeField)
         enabledField = findViewById(R.id.whEnabledField)
         patternContainer = findViewById(R.id.patternContainer)
-        addPatternButton = findViewById(R.id.addPatternButton)
-        patternHelp = findViewById(R.id.patternHelp)
-        pairingInfo = findViewById(R.id.pairingInfo)
+        stoppedWarning = findViewById(R.id.stoppedWarning)
 
-        addPatternButton.setOnClickListener { addPatternRow("") }
+        findViewById<Button>(R.id.addPatternButton).setOnClickListener { addPatternRow("") }
         findViewById<Button>(R.id.saveButton).setOnClickListener { save() }
         findViewById<Button>(R.id.testButton).setOnClickListener { sendTest() }
-        findViewById<Button>(R.id.scanPairingButton).setOnClickListener { scanPairing() }
+        findViewById<Button>(R.id.scanQrButton).setOnClickListener { scanQr() }
+        securityHmac.setOnCheckedChangeListener { _, _ -> refreshSecurityLabels() }
+        securityAes.setOnCheckedChangeListener { _, _ -> refreshSecurityLabels() }
 
         val existing = if (webhookId != 0L) Db.get(this).webhook(webhookId) else null
         if (webhookId != 0L && existing == null) { // webhook đã bị xóa
@@ -86,104 +92,98 @@ class WebhookEditActivity : AppCompatActivity() {
         title = if (existing == null) "Thêm webhook" else "Sửa webhook"
 
         if (existing != null) {
-            nameField.setText(existing.name)
-            urlField.setText(existing.url)
+            fill(WebhookConfig.of(existing))
             enabledField.isChecked = existing.enabled
-            existing.patterns.forEach { addPatternRow(it) }
-            if (existing.kind == WebhookKind.MAPCHAT) {
-                pairing = MapchatPairing(
-                    name = existing.name, url = existing.url, id = existing.pairingId.orEmpty(),
-                    key = existing.secret, pattern = existing.patterns.firstOrNull().orEmpty()
-                )
-                unpaired = existing.unpaired
-            } else {
-                secretField.setText(existing.secret)
-            }
+            stopped = existing.stopped
+        } else {
+            securityHmac.isChecked = true
+            modeOr.isChecked = true
         }
-        (if (existing?.mode == MatchMode.AND) modeAnd else modeOr).isChecked = true
-        applyKind()
+        stoppedWarning.visibility = if (stopped) View.VISIBLE else View.GONE
+        refreshSecurityLabels()
     }
 
-    // ---- quét mã QR ghép đôi ----
+    /** Điền cấu hình vào form — dùng chung cho mở webhook đã lưu và kết quả quét QR. */
+    private fun fill(c: WebhookConfig) {
+        nameField.setText(c.name)
+        urlField.setText(c.url)
+        (if (c.security == Security.AES_GCM) securityAes else securityHmac).isChecked = true
+        keptSecret = c.secret
+        secretField.setText("")
+        endpointIdField.setText(c.endpointId.orEmpty())
+        patternContainer.removeAllViews()
+        c.patterns.forEach { addPatternRow(it) }
+        (if (c.mode == MatchMode.AND) modeAnd else modeOr).isChecked = true
+        normalizeField.isChecked = c.normalize
+        refreshSecurityLabels()
+    }
 
-    private fun scanPairing() {
+    private fun currentSecurity() = if (securityAes.isChecked) Security.AES_GCM else Security.HMAC
+
+    private fun refreshSecurityLabels() {
+        val aes = currentSecurity() == Security.AES_GCM
+        secretLabel.text = if (aes) "Khóa AES-GCM (32 byte base64url, 43 ký tự)" else "Secret HMAC"
+        endpointIdLabel.text = if (aes) "ID endpoint (bắt buộc)" else "ID endpoint (tùy chọn, gửi trong header X-OpenNotify-Id)"
+        secretField.hint = if (keptSecret.isNotEmpty()) "Đã lưu — để trống để giữ nguyên" else ""
+    }
+
+    // ---- quét mã QR ----
+
+    private fun scanQr() {
         scanLauncher.launch(
             ScanOptions()
                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                .setPrompt("Quét mã QR ở máy quầy: Cài đặt → Xác nhận thanh toán tự động")
+                .setPrompt("Quét mã QR cấu hình webhook")
                 .setBeepEnabled(false)
                 .setOrientationLocked(false)
-                // Mã QR không mang ECI: phải ép UTF-8, nếu không tên tiệm có dấu sẽ bị vỡ.
+                // Mã QR không mang ECI: phải ép UTF-8, nếu không tên có dấu sẽ bị vỡ.
                 .addExtra(Intents.Scan.CHARACTER_SET, "UTF-8")
         )
     }
 
     private fun onScanned(contents: String) {
-        val p = when (val r = PairingQr.parse(contents)) {
-            is PairingParse.Error -> {
+        val config = when (val r = WebhookQr.parse(contents)) {
+            is QrParse.Error -> {
                 AlertDialog.Builder(this).setTitle("Không dùng được mã QR này").setMessage(r.message)
                     .setPositiveButton("Đóng", null).show()
                 return
             }
-            is PairingParse.Ok -> r.pairing
+            is QrParse.Ok -> r.config
         }
 
-        // Luật 7: quét lại cùng mã ghép trong cùng app = cập nhật cặp cũ, không tạo cặp thứ hai.
-        val same = Db.get(this).findPairing(pkg, p.id)
+        // Quét lại đúng endpoint đã có trong app này = cập nhật webhook đó, không tạo bản thứ hai.
+        val same = config.endpointId?.let { Db.get(this).findByEndpoint(pkg, config.url, it) }
         if (same != null && same.id != webhookId) {
             webhookId = same.id
             title = "Sửa webhook"
             enabledField.isChecked = same.enabled
-            toast("Đã ghép với tiệm này từ trước — lưu sẽ cập nhật cặp cũ")
+            toast("Webhook tới endpoint này đã có — lưu sẽ cập nhật webhook đó")
+            apply(config)
+            return
         }
-        pairing = p
-        unpaired = false
-        nameField.setText(p.name)
-        urlField.setText(p.url)
-        secretField.setText("")
-        patternContainer.removeAllViews()
-        addPatternRow(p.pattern)
-        modeOr.isChecked = true
-        applyKind()
+
+        // Đang sửa một webhook mà mã QR trỏ sang nơi khác: hỏi trước khi ghi đè cấu hình.
+        val current = urlField.text.toString().trim()
+        if (webhookId != 0L && (config.url != current || config.security != currentSecurity())) {
+            AlertDialog.Builder(this)
+                .setTitle("Thay cấu hình webhook này?")
+                .setMessage("Mã QR trỏ tới ${config.url}. Cấu hình hiện tại ($current) sẽ bị thay khi bấm Lưu.")
+                .setPositiveButton("Thay") { _, _ -> apply(config) }
+                .setNegativeButton("Hủy", null)
+                .show()
+            return
+        }
+        apply(config)
     }
 
-    /** Hiện/khóa các ô theo loại webhook đang sửa. */
-    private fun applyKind() {
-        val p = pairing
-        val isPairing = p != null
-        urlField.isEnabled = !isPairing
-        secretGroup.visibility = if (isPairing) View.GONE else View.VISIBLE
-        modeGroup.visibility = if (isPairing) View.GONE else View.VISIBLE
-        addPatternButton.visibility = if (isPairing) View.GONE else View.VISIBLE
-        for (i in 0 until patternContainer.childCount) {
-            val row = patternContainer.getChildAt(i)
-            row.findViewById<EditText>(R.id.patternField).isEnabled = !isPairing
-            row.findViewById<View>(R.id.patternRemove).visibility = if (isPairing) View.GONE else View.VISIBLE
-        }
-        patternHelp.text = if (isPairing) {
-            "Mẫu lọc lấy từ mã QR (mã đơn mapchat), đối chiếu trên nội dung đã viết hoa và bỏ ký tự " +
-                "không phải chữ/số. Không sửa tay được — máy quầy đổi mẫu thì quét lại mã QR."
-        } else {
-            "Regex, không phân biệt hoa/thường, đối chiếu với title + text + big text + sub text + lines. " +
-                "Không có pattern nào = nhận mọi thông báo của ứng dụng."
-        }
-
-        pairingInfo.visibility = if (isPairing) View.VISIBLE else View.GONE
-        if (p != null) {
-            pairingInfo.text = buildString {
-                if (unpaired) {
-                    append("⚠ Máy quầy đã đổi mã ghép — cặp này đã ngừng gửi. Quét mã QR mới để ghép lại.\n\n")
-                }
-                append("Ghép với máy quầy mapchat · mã ghép ${p.id}\n")
-                append("Khóa mã hóa: đã lưu trên máy, không hiển thị.\n")
-                append("Thông báo khớp được mã hóa AES-256-GCM trước khi gửi; mapchat chỉ chuyển tiếp, không đọc được.\n")
-                append("Chỉ đặt cặp này cho app ngân hàng nhận tiền của tiệm: app khác có thể dựng thông báo giả có mã đơn.\n")
-                append("Mã QR chứa khóa — đừng chụp màn hình gửi đi.")
-            }
-        }
+    private fun apply(config: WebhookConfig) {
+        fill(config)
+        stopped = false
+        stoppedWarning.visibility = View.GONE
+        toast("Đã điền từ mã QR — kiểm tra rồi bấm Lưu")
     }
 
-    // ---- sửa tay (HMAC) ----
+    // ---- form ----
 
     private fun addPatternRow(value: String) {
         val row = LayoutInflater.from(this).inflate(R.layout.item_pattern_row, patternContainer, false)
@@ -197,89 +197,35 @@ class WebhookEditActivity : AppCompatActivity() {
             .map { patternContainer.getChildAt(it).findViewById<EditText>(R.id.patternField).text.toString().trim() }
             .filter { it.isNotEmpty() }
 
-    /** Trả về thông báo lỗi nếu url/secret không hợp lệ, null nếu ổn. */
-    private fun validateEndpoint(url: String, secret: String): String? = when {
-        !(url.startsWith("http://") || url.startsWith("https://")) || Uri.parse(url).host.isNullOrBlank() ->
-            "URL phải bắt đầu bằng http:// hoặc https://"
-        secret.isBlank() -> "Cần nhập secret để ký HMAC"
-        else -> null
+    /** Cấu hình đang có trên form; null (kèm thông báo) nếu không hợp lệ theo chuẩn. */
+    private fun currentConfig(): WebhookConfig? {
+        val config = WebhookConfig(
+            name = nameField.text.toString().trim(),
+            url = urlField.text.toString().trim(),
+            security = currentSecurity(),
+            secret = secretField.text.toString().trim().ifEmpty { keptSecret },
+            endpointId = endpointIdField.text.toString().trim().ifEmpty { null },
+            patterns = currentPatterns(),
+            mode = if (modeAnd.isChecked) MatchMode.AND else MatchMode.OR,
+            normalize = normalizeField.isChecked
+        )
+        config.validate()?.let { toast(it); return null }
+        return config
     }
 
     private fun save() {
-        val p = pairing
-        val webhook = if (p != null) {
-            Webhook(
-                id = webhookId, pkg = pkg, name = nameField.text.toString().trim().ifEmpty { p.name },
-                url = p.url, secret = p.key, mode = MatchMode.OR, enabled = enabledField.isChecked,
-                patterns = listOf(p.pattern), kind = WebhookKind.MAPCHAT, pairingId = p.id, unpaired = unpaired
-            )
-        } else {
-            val url = urlField.text.toString().trim()
-            val secret = secretField.text.toString().trim()
-            validateEndpoint(url, secret)?.let { toast(it); return }
-
-            val patterns = currentPatterns()
-            patterns.firstOrNull { !PatternMatcher.isValidRegex(it) }?.let {
-                toast("Pattern regex không hợp lệ: $it")
-                return
-            }
-            Webhook(
-                id = webhookId, pkg = pkg, name = nameField.text.toString().trim().ifEmpty { Uri.parse(url).host ?: url },
-                url = url, secret = secret, mode = if (modeAnd.isChecked) MatchMode.AND else MatchMode.OR,
-                enabled = enabledField.isChecked, patterns = patterns
-            )
-        }
-        Db.get(this).saveWebhook(webhook)
+        val config = currentConfig() ?: return
+        // Lưu lại sau khi sửa = người dùng đã xử lý cảnh báo "ngừng nhận" -> gửi lại bình thường.
+        Db.get(this).saveWebhook(config.toWebhook(webhookId, pkg, enabledField.isChecked, stopped = false))
         finish()
     }
 
-    // ---- gửi thử ----
-
     private fun sendTest() {
-        val p = pairing
-        if (p != null) {
-            io.execute {
-                // Nội dung không chứa mã đơn: máy quầy giải mã được rồi bỏ qua, không đơn nào bị đụng tới.
-                val body = MapchatEnvelope.seal(
-                    p.id, p.key, "opennotify.test", System.currentTimeMillis(),
-                    "OpenNotify thử kết nối — không phải giao dịch"
-                )
-                val code = WebhookClient.postJson(p.url, body)
-                val msg = when (Sender.classify(code)) {
-                    SendOutcome.OK -> "Thông suốt — máy quầy đã nhận gói thử"
-                    SendOutcome.UNPAIRED -> "Mã ghép không còn hiệu lực (máy quầy đã đổi mã) — quét lại mã QR"
-                    SendOutcome.RETRY -> when (code) {
-                        503 -> "mapchat nhận được nhưng máy quầy đang tắt"
-                        429 -> "Gửi quá nhanh, thử lại sau ít phút"
-                        else -> "Không tới được ${Uri.parse(p.url).host} — kiểm tra mạng"
-                    }
-                    SendOutcome.DROP -> "mapchat từ chối gói tin (HTTP $code)"
-                }
-                runOnUiThread { toast(msg) }
-            }
-            return
-        }
-
-        val url = urlField.text.toString().trim()
-        val secret = secretField.text.toString().trim()
-        validateEndpoint(url, secret)?.let { toast(it); return }
-
+        val config = currentConfig() ?: return
+        val w = config.toWebhook(webhookId, pkg, enabled = true)
         io.execute {
-            val body = JSONObject().apply {
-                put("source", "opennotify")
-                put("package", "test")
-                put("key", "test-${System.currentTimeMillis()}")
-                put("post_time", System.currentTimeMillis())
-                put("title", "Test")
-                put("text", "+50,000 VND test DH0001")
-                put("big_text", "")
-                put("sub_text", "")
-                put("lines", "")
-            }.toString()
-            val ok = WebhookClient.post(url, secret, body)
-            runOnUiThread {
-                toast(if (ok) "Gửi test thành công" else "Gửi thất bại, xem log backend")
-            }
+            val code = Sender.post(w, Payload.test())
+            runOnUiThread { toast(Sender.describeTest(code, w.url)) }
         }
     }
 

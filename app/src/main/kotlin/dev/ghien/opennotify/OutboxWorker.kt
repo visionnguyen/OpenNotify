@@ -23,16 +23,16 @@ class OutboxWorker(context: Context, params: WorkerParameters) : Worker(context,
         val db = Db.get(applicationContext)
 
         val now = System.currentTimeMillis()
-        val unpaired = HashSet<Long>()
+        val stopped = HashSet<Long>()
         for (d in db.pendingDeliveries(limit = 100)) {
-            if (d.webhook.id in unpaired) continue // cặp vừa bị mapchat báo đổi mã trong lượt này
-            if (d.webhook.kind == WebhookKind.MAPCHAT && now - d.notification.ts > Sender.MAPCHAT_MAX_AGE_MS) {
+            if (d.webhook.id in stopped) continue // endpoint vừa báo ngừng nhận trong lượt này
+            if (now - d.notification.ts > Sender.MAX_AGE_MS) {
                 db.markDropped(d.notification.hash, d.webhook.id)
                 continue
             }
             val outcome = Sender.send(d.webhook, d.notification)
             Sender.record(db, d.notification.hash, d.webhook, outcome)
-            if (outcome == SendOutcome.UNPAIRED) unpaired.add(d.webhook.id)
+            if (outcome == SendOutcome.STOPPED) stopped.add(d.webhook.id)
         }
         // Giữ log thông báo (của các ứng dụng đang theo dõi) trong 30 ngày để duyệt lại;
         // chỉnh số này nếu muốn giữ lâu/ngắn hơn.

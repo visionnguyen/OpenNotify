@@ -13,13 +13,20 @@ if (!SECRET) {
   process.exit(1);
 }
 
+// Payload chuẩn OpenNotify Webhook v1 — xem docs/webhook-standard.md ở gốc repo.
+const now = Date.now();
+const title = "Biến động số dư";
+const bodyText = "+50,000VND GD:123456 DH0001 chuyen tien test";
 const event = {
+  v: 1,
   source: "opennotify",
-  package: "com.mbmobile",
-  key: `test-${Date.now()}`,
-  post_time: Date.now(),
-  title: "Biến động số dư",
-  text: "+50,000VND GD:123456 DH0001 chuyen tien test",
+  pkg: "com.mbmobile",
+  key: `test-${now}`,
+  post_time: now,
+  at: now,
+  text: `${title} ${bodyText}`,
+  title,
+  body: bodyText,
   big_text: "",
   sub_text: "",
   lines: "",

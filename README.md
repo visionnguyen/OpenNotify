@@ -76,8 +76,8 @@ NotifyListenerService.onNotificationPosted()   ← hệ thống tự gọi, kể
         │
         ├─ không khớp → chỉ nằm trong log để duyệt
         │
-        └─ khớp       → ghi dòng "deliveries" (sent=0), HTTP POST + HMAC-SHA256
-                        tới URL/secret của chính webhook đó, retry với backoff
+        └─ khớp       → ghi dòng "deliveries" (sent=0), HTTP POST theo chuẩn
+                        (HMAC hoặc AES-GCM) tới webhook đó, retry với backoff
                                │
                                ▼ (nếu thất bại)
                      OutboxWorker (WorkManager, mỗi 15 phút) gửi lại các
@@ -89,25 +89,24 @@ tiến trình app không bị hệ thống đóng băng trên các ROM tối ưu
 (MIUI, ColorOS, FuntouchOS...). Việc đọc thông báo thật sự vẫn do
 `NotifyListenerService` đảm nhiệm.
 
-## Payload gửi tới webhook (chỉ với thông báo khớp luật)
+## Chuẩn webhook (mở)
 
-```json
-{
-  "source": "opennotify",
-  "package": "com.mbmobile",
-  "key": "...",
-  "post_time": 1730000000000,
-  "title": "...",
-  "text": "...",
-  "big_text": "...",
-  "sub_text": "...",
-  "lines": "..."
-}
-```
+Mọi webhook tuân theo **chuẩn OpenNotify Webhook v1** — xem
+[`docs/webhook-standard.md`](docs/webhook-standard.md). Bất kỳ bên nhận nào làm đúng chuẩn là nhận
+được. Tóm tắt:
 
-Header `X-Signature` = `hex(HMAC_SHA256(secret, raw_body))`. Backend xác
-thực bằng cách tính lại HMAC trên đúng raw body nhận được và so sánh
-(dùng so sánh constant-time, ví dụ `hmac.compare_digest` trong Python).
+- Một webhook gồm: URL, chế độ bảo mật (`hmac`: JSON rõ + header `X-Signature`;
+  `aes-gcm`: gói `{id, iv, ct}` mã hóa AES-256-GCM), secret/khóa, id endpoint, bộ pattern
+  (VÀ/HOẶC, có tùy chọn chuẩn hóa chuỗi trước khi so).
+- **Nhập tay hoặc quét mã QR đều được và thay thế được cho nhau**: nút *Quét mã QR cấu hình*
+  chỉ điền sẵn đúng các ô của form, rồi qua cùng một bước kiểm tra.
+- Payload giống nhau ở mọi chế độ: `pkg`, `key`, `post_time`, `at`, `text` (nội dung đầy đủ,
+  cũng là chuỗi đem so pattern) và các phần thô `title`/`body`/`big_text`/`sub_text`/`lines`.
+- Bên nhận trả 404/410 → app ngừng gửi và báo người dùng; 408/429/5xx/lỗi mạng → thử lại tối đa
+  6 giờ; 4xx khác → bỏ.
+
+Ví dụ bên nhận: `backend/` (chế độ `hmac`, hàng mẫu) và máy quầy mapchat (chế độ `aes-gcm`, quét
+mã ở **Cài đặt → Xác nhận thanh toán tự động → Hiện mã QR**).
 
 **Lưu ý quan trọng:** trước khi tin vào field nào, hãy tự thu thập vài
 mẫu thông báo thật của từng nguồn bạn quan tâm (giao dịch vào, giao dịch
@@ -141,9 +140,10 @@ tới đường dẫn SDK.
    nhận cho phép chạy nền không giới hạn. Cũng ở đây có thể kiểm tra lại
    quyền đọc thông báo và chọn âm thanh báo.
 3. Bấm **+**, chọn các ứng dụng cần lấy thông báo (ví dụ MBBank) → **Thêm**.
-4. Bấm nút cấu hình của ứng dụng → **+ Thêm webhook**: điền URL, secret
-   (đặt giống hệt ở backend), pattern nếu cần → **Gửi sự kiện test tới
-   webhook** để xác nhận backend nhận được và verify chữ ký đúng → **Lưu**.
+4. Bấm nút cấu hình của ứng dụng → **+ Thêm webhook**: điền tay (URL, chế
+   độ bảo mật, secret giống hệt ở bên nhận, id nếu có, pattern) hoặc bấm
+   **Quét mã QR cấu hình** nếu bên nhận cung cấp mã QR → **Gửi sự kiện test
+   tới webhook** để xác nhận bên nhận nhận được → **Lưu**.
 5. Dùng máy bình thường một lúc, mở ứng dụng trong OpenNotify để xem mẫu
    thông báo thật rồi chỉnh pattern cho khớp.
 
@@ -201,14 +201,6 @@ Nếu vẫn thấy trễ hoặc mất thông báo dù đã làm đủ các bư�
 khả năng cao nằm ở việc app nguồn (MBBank...) bị OEM hạn chế chạy nền —
 kiểm tra lại các mục pin/tự khởi động cho chính app đó.
 
-## Ghép với máy quầy mapchat (quét QR)
-
-Trong màn thêm/sửa webhook có nút **Quét mã QR ghép đôi**: quét mã ở máy quầy mapchat
-(**Cài đặt → Xác nhận thanh toán tự động → Hiện mã QR**) là webhook được cấu hình xong — địa chỉ,
-mã ghép, khóa và mẫu lọc đều lấy từ mã QR. Thông báo khớp mã đơn được mã hóa AES-256-GCM trước khi
-gửi; mapchat chỉ chuyển tiếp, không đọc được. Chỉ đặt cặp này cho app ngân hàng nhận tiền của tiệm.
-Quy chuẩn đầy đủ: [`docs/mapchat-pairing.md`](docs/mapchat-pairing.md).
-
 ## Backend mẫu (Node.js)
 
 Repo này có kèm một backend mẫu để nhận webhook, verify chữ ký, dedupe
@@ -223,7 +215,7 @@ viết, không phải service production sẵn dùng.
   dọn định kỳ trong `OutboxWorker`, chỉnh hằng số `olderThanMs` nếu muốn).
   Cột `is_read` cho số chưa đọc trên trang chủ.
 - `webhooks` + `webhook_patterns`: webhook và bộ pattern của từng ứng dụng.
-- `deliveries`: trạng thái gửi từng (thông báo, webhook), phục vụ gửi lại.
+- `deliveries`: trạng thái gửi từng (thông báo, webhook): chờ gửi / đã gửi / đã bỏ, phục vụ gửi lại.
 - `listener_sessions`: các phiên kết nối của listener, nguồn của biểu đồ uptime
   (giữ 14 ngày). Cột `notifications.is_deleted` là cờ xóa mềm.
 - Cài đặt âm thanh lưu trong SharedPreferences (`Prefs.kt`).
@@ -243,7 +235,10 @@ opennotify/
 │       │   ├── NotifyListenerService.kt    # chỉ nhận app đã thêm, khớp webhook, gửi ngay
 │       │   ├── Db.kt                       # SQLite: tracked_apps, notifications, webhooks, patterns, deliveries
 │       │   ├── PatternMatcher.kt           # khớp bộ pattern theo VÀ / HOẶC
-│       │   ├── Payload.kt                  # dựng JSON payload dùng chung
+│       │   ├── Payload.kt                  # payload chuẩn v1 dùng chung
+│       │   ├── WebhookConfig.kt            # cấu hình webhook + đọc mã QR (chung luật với nhập tay)
+│       │   ├── AesGcmEnvelope.kt           # chế độ aes-gcm: gói {id, iv, ct}
+│       │   ├── Sender.kt                   # gửi theo chuẩn, phân loại mã trả lời
 │       │   ├── OutboxWorker.kt             # lưới an toàn, gửi lại định kỳ + dọn log cũ
 │       │   ├── KeepAliveService.kt         # foreground service chống bị kill
 │       │   ├── BootReceiver.kt             # khởi động lại sau reboot
@@ -256,9 +251,10 @@ opennotify/
 │       │   ├── Liveness.kt / UptimeBarView.kt # đo + vẽ uptime của listener
 │       │   ├── Prefs.kt / SoundPlayer.kt   # cài đặt âm thanh + phát âm thanh khi có thông báo
 │       │   ├── AppConfigActivity.kt        # danh sách webhook của một ứng dụng
-│       │   └── WebhookEditActivity.kt      # sửa webhook: URL, secret, pattern, VÀ/HOẶC
+│       │   └── WebhookEditActivity.kt      # form webhook (nhập tay hoặc quét QR)
 │       └── res/...
 ├── .github/workflows/build-apk.yml    # build APK tự động, không cần Android Studio
+├── docs/webhook-standard.md           # chuẩn OpenNotify Webhook v1 (chuẩn mở)
 ├── backend/                            # backend mẫu nhận webhook (Node.js) — xem backend/README.md
 │   ├── src/server.js                   # verify HMAC, dedupe, parse, ghi log
 │   ├── src/parse.js                    # regex mẫu, CẦN chỉnh theo dữ liệu thật

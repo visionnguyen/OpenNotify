@@ -5,10 +5,6 @@ import java.net.URL
 
 object WebhookClient {
 
-    /** Hàm blocking — luôn gọi từ background thread. Trả về true nếu HTTP 2xx. */
-    fun post(url: String, secret: String, body: String, timeoutMs: Int = 8000): Boolean =
-        postJson(url, body, mapOf("X-Signature" to Signer.hmacHex(secret, body)), timeoutMs) in 200..299
-
     /**
      * POST một thân JSON, trả về mã HTTP, hoặc -1 nếu không tới được máy chủ (mất mạng, URL sai...).
      * Hàm blocking — luôn gọi từ background thread.

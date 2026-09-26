@@ -81,10 +81,11 @@ class NotifyListenerService : NotificationListenerService() {
 
         if (live) SoundPlayer.playIfEnabled(applicationContext)
 
+        // Đọc bù thông báo đã nằm trên máy quá hạn gửi của chuẩn: không gửi nữa, chỉ lưu để xem lại.
+        if (!live && record.ts - record.postTime > Sender.MAX_AGE_MS) return
+
         val targets = db.webhooksForPackage(sbn.packageName, onlyEnabled = true)
             .filter { PatternMatcher.matches(it, PatternMatcher.inputFor(it, record)) }
-            // Đọc bù thông báo đã nằm trên máy quá lâu: máy quầy mapchat không cần nữa.
-            .filter { live || it.kind != WebhookKind.MAPCHAT || record.ts - record.postTime < Sender.MAPCHAT_MAX_AGE_MS }
         if (targets.isEmpty()) return
 
         // Ghi nhận trước khi gửi: nếu app bị kill giữa chừng, OutboxWorker vẫn gửi bù.
@@ -103,7 +104,7 @@ class NotifyListenerService : NotificationListenerService() {
                 val db = Db.get(applicationContext)
                 for (w in targets) {
                     var outcome = SendOutcome.RETRY
-                    for (delay in Sender.immediateDelaysMs(w)) {
+                    for (delay in Sender.IMMEDIATE_DELAYS_MS) {
                         if (delay > 0) Thread.sleep(delay)
                         outcome = Sender.send(w, record)
                         if (outcome != SendOutcome.RETRY) break

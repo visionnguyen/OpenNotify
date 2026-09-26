@@ -36,24 +36,27 @@ data class Webhook(
     val pkg: String,
     val name: String,
     val url: String,
-    /** HMAC: secret để ký. MAPCHAT: khóa AES-256-GCM (base64url) — không bao giờ hiện/log. */
+    /** HMAC: chuỗi bí mật để ký. AES_GCM: khóa 32 byte base64url. Không bao giờ hiện dạng rõ, không log. */
     val secret: String,
     val mode: MatchMode,
     val enabled: Boolean,
     val patterns: List<String>,
-    val kind: WebhookKind = WebhookKind.HMAC,
-    /** Mã ghép mapchat (`id` trong mã QR); null với webhook HMAC. */
-    val pairingId: String? = null,
-    /** mapchat trả 404: máy quầy đã "Đổi mã", cặp này ngừng gửi cho tới khi quét lại QR. */
-    val unpaired: Boolean = false
+    val security: Security = Security.HMAC,
+    /** `id` của chuẩn: bắt buộc với AES_GCM (đi rõ trong gói tin), tùy chọn với HMAC (header). */
+    val endpointId: String? = null,
+    /** Viết hoa + bỏ ký tự không phải chữ/số trước khi so pattern. */
+    val normalize: Boolean = false,
+    /** Bên nhận trả 404/410: ngừng gửi cho tới khi người dùng sửa cấu hình hoặc quét lại QR. */
+    val stopped: Boolean = false
 )
 
-/**
- * HMAC: POST JSON rõ + header X-Signature tới backend riêng.
- * MAPCHAT: cặp ghép với máy quầy mapchat qua mã QR, gói tin mã hóa AES-256-GCM
- * (xem docs/mapchat-pairing.md).
- */
-enum class WebhookKind { HMAC, MAPCHAT }
+/** Cách bảo vệ gói tin theo chuẩn OpenNotify Webhook v1 (docs/webhook-standard.md). */
+enum class Security {
+    /** Payload JSON rõ + header X-Signature = HMAC-SHA256. */
+    HMAC,
+    /** Gói {id, iv, ct}: payload mã hóa AES-256-GCM. */
+    AES_GCM
+}
 
 data class PendingDelivery(val notification: NotificationRecord, val webhook: Webhook)
 
@@ -81,7 +84,7 @@ data class ListenerSession(val procKey: String, val startTs: Long, val lastSeenT
  * gửi thành công) — xem NotifyListenerService và OutboxWorker.
  */
 class Db private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "opennotify.db", null, 5) {
+    SQLiteOpenHelper(context.applicationContext, "opennotify.db", null, 6) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -122,7 +125,8 @@ class Db private constructor(context: Context) :
                 created_ts integer not null,
                 kind text not null default 'HMAC',
                 pairing_id text,
-                unpaired integer not null default 0
+                unpaired integer not null default 0,
+                normalize integer not null default 0
             )"""
         )
         db.execSQL("create index idx_webhook_package on webhooks(package)")
@@ -179,10 +183,17 @@ class Db private constructor(context: Context) :
             createSessionsTable(db)
         }
         if (oldVersion < 5) {
-            // Thêm loại webhook mapchat (ghép qua mã QR); webhook cũ đều là HMAC.
+            // Thêm cột chế độ bảo mật / id endpoint / cờ ngừng nhận; webhook cũ đều là HMAC.
             db.execSQL("alter table webhooks add column kind text not null default 'HMAC'")
             db.execSQL("alter table webhooks add column pairing_id text")
             db.execSQL("alter table webhooks add column unpaired integer not null default 0")
+        }
+        if (oldVersion < 6) {
+            // Chuẩn webhook mở: "mapchat" không còn là loại riêng mà là chế độ AES_GCM của chuẩn.
+            // Tên cột giữ nguyên (minSdk 26 chưa có RENAME COLUMN): kind = bảo mật, pairing_id = id
+            // endpoint, unpaired = đã ngừng nhận. Cặp mapchat cũ vốn so trên chuỗi đã chuẩn hóa.
+            db.execSQL("alter table webhooks add column normalize integer not null default 0")
+            db.execSQL("update webhooks set kind = 'AES_GCM', normalize = 1 where kind = 'MAPCHAT'")
         }
     }
 
@@ -337,7 +348,7 @@ class Db private constructor(context: Context) :
 
     // ---- webhooks ----
 
-    /** onlyEnabled: chỉ những webhook đang gửi được (bật và không phải cặp mapchat đã bị đổi mã). */
+    /** onlyEnabled: chỉ những webhook đang gửi được (bật và bên nhận chưa báo ngừng nhận). */
     fun webhooksForPackage(pkg: String, onlyEnabled: Boolean = false): List<Webhook> =
         queryWebhooks(
             "where package = ?" + if (onlyEnabled) " and enabled = 1 and unpaired = 0" else "", arrayOf(pkg)
@@ -345,17 +356,17 @@ class Db private constructor(context: Context) :
 
     fun webhook(id: Long): Webhook? = queryWebhooks("where id = ?", arrayOf(id.toString())).firstOrNull()
 
-    /** Cặp mapchat đã ghép với cùng mã ghép trong cùng app (quét lại = cập nhật cặp này). */
-    fun findPairing(pkg: String, pairingId: String): Webhook? =
+    /** Webhook cùng app, cùng URL và cùng id endpoint (quét lại cùng một mã QR = cập nhật cái này). */
+    fun findByEndpoint(pkg: String, url: String, endpointId: String): Webhook? =
         queryWebhooks(
-            "where package = ? and kind = ? and pairing_id = ?", arrayOf(pkg, WebhookKind.MAPCHAT.name, pairingId)
+            "where package = ? and url = ? and pairing_id = ?", arrayOf(pkg, url, endpointId)
         ).firstOrNull()
 
     private fun queryWebhooks(where: String, args: Array<String>): List<Webhook> {
         val db = readableDatabase
         val rows = mutableListOf<Webhook>()
         db.rawQuery(
-            """select id, package, name, url, secret, match_mode, enabled, kind, pairing_id, unpaired
+            """select id, package, name, url, secret, match_mode, enabled, kind, pairing_id, unpaired, normalize
                from webhooks $where order by id""",
             args
         ).use { c ->
@@ -366,9 +377,10 @@ class Db private constructor(context: Context) :
                         url = c.getString(3), secret = c.getString(4),
                         mode = if (c.getString(5) == MatchMode.AND.name) MatchMode.AND else MatchMode.OR,
                         enabled = c.getInt(6) == 1, patterns = emptyList(),
-                        kind = if (c.getString(7) == WebhookKind.MAPCHAT.name) WebhookKind.MAPCHAT else WebhookKind.HMAC,
-                        pairingId = if (c.isNull(8)) null else c.getString(8),
-                        unpaired = c.getInt(9) == 1
+                        security = if (c.getString(7) == Security.AES_GCM.name) Security.AES_GCM else Security.HMAC,
+                        endpointId = if (c.isNull(8)) null else c.getString(8),
+                        stopped = c.getInt(9) == 1,
+                        normalize = c.getInt(10) == 1
                     )
                 )
             }
@@ -397,9 +409,10 @@ class Db private constructor(context: Context) :
                 put("secret", w.secret)
                 put("match_mode", w.mode.name)
                 put("enabled", if (w.enabled) 1 else 0)
-                put("kind", w.kind.name)
-                put("pairing_id", w.pairingId)
-                put("unpaired", if (w.unpaired) 1 else 0)
+                put("kind", w.security.name)
+                put("pairing_id", w.endpointId)
+                put("unpaired", if (w.stopped) 1 else 0)
+                put("normalize", if (w.normalize) 1 else 0)
             }
             val id = if (w.id == 0L) {
                 cv.put("created_ts", System.currentTimeMillis())
@@ -464,8 +477,8 @@ class Db private constructor(context: Context) :
         )
     }
 
-    /** mapchat trả 404: cặp ghép không còn hiệu lực -> ngừng gửi, bỏ mọi lượt đang chờ của nó. */
-    fun markUnpaired(webhookId: Long) {
+    /** Bên nhận trả 404/410: endpoint không còn nhận -> ngừng gửi, bỏ mọi lượt đang chờ của nó. */
+    fun markStopped(webhookId: Long) {
         val db = writableDatabase
         db.beginTransaction()
         try {
